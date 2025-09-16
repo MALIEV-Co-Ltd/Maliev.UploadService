@@ -55,6 +55,10 @@ public class FileServiceTests : IDisposable
         };
 
         _mockStorageService
+            .Setup(s => s.CalculateHashesAsync(It.IsAny<Stream>()))
+            .ReturnsAsync(("md5hash", "sha256hash"));
+
+        _mockStorageService
             .Setup(s => s.UploadFileAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
@@ -68,13 +72,13 @@ public class FileServiceTests : IDisposable
 
         // Assert
         result.Should().NotBeNull();
-        result.ObjectName.Should().Be(objectPath);
+        result.ObjectName.Should().StartWith("quotations/QUO-001/documents/test"); // Service adds timestamp for uniqueness
         result.ContentType.Should().Be("application/pdf");
         result.FileSize.Should().Be(11);
 
         _mockStorageService.Verify(s => s.UploadFileAsync(
             "test-bucket",
-            objectPath,
+            It.Is<string>(path => path.StartsWith("quotations/QUO-001/documents/test")),
             It.IsAny<Stream>(),
             "application/pdf"), Times.Once);
     }
