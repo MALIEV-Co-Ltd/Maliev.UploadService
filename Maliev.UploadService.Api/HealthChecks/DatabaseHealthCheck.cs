@@ -16,13 +16,26 @@ public class DatabaseHealthCheck : IHealthCheck
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(
-        HealthCheckContext context, 
+        HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            await _context.Database.ExecuteSqlRawAsync("SELECT 1", cancellationToken);
-            return HealthCheckResult.Healthy("Database connection is healthy");
+            // Check if using in-memory database (for testing)
+            if (_context.Database.IsInMemory())
+            {
+                // For in-memory databases, just check if we can access the context
+                var canConnect = await _context.Database.CanConnectAsync(cancellationToken);
+                return canConnect
+                    ? HealthCheckResult.Healthy("In-memory database connection is healthy")
+                    : HealthCheckResult.Unhealthy("In-memory database connection failed");
+            }
+            else
+            {
+                // For relational databases, execute a simple query
+                await _context.Database.ExecuteSqlRawAsync("SELECT 1", cancellationToken);
+                return HealthCheckResult.Healthy("Database connection is healthy");
+            }
         }
         catch (Exception ex)
         {
