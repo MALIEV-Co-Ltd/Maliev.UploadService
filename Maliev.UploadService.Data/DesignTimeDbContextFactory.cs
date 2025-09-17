@@ -12,11 +12,6 @@ namespace Maliev.UploadService.Data
 
             var connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__UploadDbContext");
 
-            if (string.IsNullOrEmpty(connectionString))
-            {
-                connectionString = "Host=localhost;Port=5433;Database=upload_app_db;Username=postgres;Password=temp;SslMode=Disable";
-            }
-
             optionsBuilder.UseNpgsql(connectionString);
 
             return new UploadDbContext(optionsBuilder.Options);
