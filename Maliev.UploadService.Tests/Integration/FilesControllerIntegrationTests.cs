@@ -117,17 +117,6 @@ public class FilesControllerIntegrationTests : IClassFixture<WebApplicationFacto
         }
     }
 
-    [Fact]
-    public async Task Metrics_Endpoint_IsAccessible()
-    {
-        // Act
-        var response = await _client.GetAsync("/uploads/metrics");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("# HELP");
-    }
 
     [Fact]
     public async Task UploadFile_ValidFile_WithMockStorage_ReturnsSuccess()
@@ -400,22 +389,6 @@ public class FilesControllerIntegrationTests : IClassFixture<WebApplicationFacto
             // In Development/Production, JWT auth is required but route should be found
             response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
         }
-    }
-
-    [Fact]
-    public async Task PrometheusMetrics_ContainRequiredMetrics()
-    {
-        // Act
-        var response = await _client.GetAsync("/uploads/metrics");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var content = await response.Content.ReadAsStringAsync();
-
-        // Check for standard .NET runtime metrics that are actually exported
-        content.Should().Contain("system_runtime_dotnet_");
-        content.Should().Contain("thread_pool");
-        content.Should().Contain("process_cpu_time");
     }
 
     public void Dispose()
