@@ -215,8 +215,7 @@ try
     .WithTags("Health")
     .AllowAnonymous();
 
-    // Prometheus metrics
-        .AllowAnonymous();
+    // Prometheus metrics removed
 
     app.MapControllers()
         .RequireRateLimiting("UploadPolicy");
