@@ -12,7 +12,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using Prometheus;
 using Serilog;
 using Swashbuckle.AspNetCore.SwaggerGen;
 using System.Text;
@@ -196,7 +195,6 @@ try
 
     // Add security middleware
     app.UseHttpsRedirection();
-    app.UseHttpMetrics();
     app.UseCors();
     app.UseRateLimiter();
 
@@ -218,7 +216,6 @@ try
     .AllowAnonymous();
 
     // Prometheus metrics
-    app.MapMetrics("/uploads/metrics")
         .AllowAnonymous();
 
     app.MapControllers()
