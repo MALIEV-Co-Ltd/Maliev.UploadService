@@ -7,13 +7,15 @@ public class JwtOptions
     public const string SectionName = "Jwt";
 
     [Required]
-    public string SecretKey { get; set; } = string.Empty;
+    public required string Issuer { get; set; }
 
     [Required]
-    public string Issuer { get; set; } = string.Empty;
+    public required string Audience { get; set; }
 
     [Required]
-    public string Audience { get; set; } = string.Empty;
+    public required string SecurityKey { get; set; }
 
-    public int ExpirationInMinutes { get; set; } = 60;
+    [Required]
+    [Range(1, int.MaxValue)]
+    public int ExpirationMinutes { get; set; } = 30;
 }

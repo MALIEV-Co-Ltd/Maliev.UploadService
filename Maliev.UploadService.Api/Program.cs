@@ -8,6 +8,7 @@ using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Data.DbContexts;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
@@ -17,12 +18,24 @@ using Swashbuckle.AspNetCore.SwaggerGen;
 using System.Text;
 using System.Threading.RateLimiting;
 using Google.Cloud.Storage.V1;
+using Serilog.Filters;
+using Microsoft.AspNetCore.HttpOverrides;
+using Maliev.UploadService.Api.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
+    .Enrich.FromLogContext()
+    .Enrich.WithEnvironmentName()
+    .Enrich.WithMachineName()
+    .Enrich.WithProcessId()
+    .Enrich.WithThreadId()
+    .Filter.ByExcluding(Matching.WithProperty<string>("RequestPath", path =>
+        path.StartsWith("/health") || path.StartsWith("/metrics")))
+    .WriteTo.Console(outputTemplate:
+        "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {CorrelationId} {SourceContext} {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
 builder.Host.UseSerilog();
@@ -41,6 +54,11 @@ try
         builder.Configuration.AddKeyPerFile(directoryPath: secretsPath, optional: true);
     }
 
+    // Add services to the container
+    builder.Services.AddControllers();
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddOpenApi();
+
     // API Versioning
     builder.Services.AddApiVersioning(options =>
     {
@@ -54,10 +72,28 @@ try
         options.SubstituteApiVersionInUrl = true;
     });
 
-    // Add controllers
-    builder.Services.AddControllers();
+    builder.Services.AddTransient<IConfigureOptions<SwaggerGenOptions>, ConfigureSwaggerOptions>();
+    builder.Services.AddSwaggerGen();
 
-    // Configure Upload DbContext (only for file metadata tracking)
+    // Configure strongly-typed configuration options with validation
+    builder.Services.Configure<RateLimitOptions>(builder.Configuration.GetSection(RateLimitOptions.SectionName));
+
+    // Configure JWT options only if available (to allow local development without secrets)
+    var initialJwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
+    if (!string.IsNullOrEmpty(initialJwtSection["Issuer"]) && !builder.Environment.IsEnvironment("Testing"))
+    {
+        builder.Services.Configure<JwtOptions>(initialJwtSection);
+        builder.Services.AddOptions<JwtOptions>()
+            .Bind(initialJwtSection)
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+    }
+
+    builder.Services.AddOptions<RateLimitOptions>()
+        .Bind(builder.Configuration.GetSection(RateLimitOptions.SectionName))
+        .ValidateDataAnnotations();
+
+    // Configure Country DbContext
     if (builder.Environment.IsEnvironment("Testing"))
     {
         builder.Services.AddDbContext<UploadDbContext>(options =>
@@ -71,8 +107,12 @@ try
         });
     }
 
-    // Configure caching
-    builder.Services.AddMemoryCache();
+    builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+
+    // Register application services
+    builder.Services.AddScoped<IAuthorizationService, AuthorizationService>();
+    builder.Services.AddScoped<IFileStorageService, FileStorageService>();
+    builder.Services.AddScoped<IGoogleCloudStorageService, GoogleCloudStorageService>();
 
     // Configure rate limiting
     builder.Services.AddRateLimiter(options =>
@@ -115,10 +155,6 @@ try
     builder.Services.AddScoped<IFileStorageService, FileStorageService>();
     builder.Services.AddScoped<IAuthorizationService, AuthorizationService>();
 
-    // Configure Swagger
-    builder.Services.AddTransient<IConfigureOptions<SwaggerGenOptions>, ConfigureSwaggerOptions>();
-    builder.Services.AddSwaggerGen();
-
     // Configure CORS
     builder.Services.AddCors(options =>
     {
@@ -138,40 +174,59 @@ try
     // Configure JWT Authentication (skip in Testing environment)
     if (!builder.Environment.IsEnvironment("Testing"))
     {
-        var jwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
-        if (jwtSection.Exists())
+        var builderJwtSection = builder.Configuration.GetSection(JwtOptions.SectionName);
+        if (builderJwtSection.Exists())
         {
-            builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-                .AddJwtBearer(options =>
+            builder.Services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            }).AddJwtBearer(options =>
+            {
+                var jwtOptions = new JwtOptions
                 {
-                    var jwtOptions = new JwtOptions();
-                    jwtSection.Bind(jwtOptions);
+                    Issuer = "default-issuer",
+                    Audience = "default-audience", 
+                    SecurityKey = "default-key"
+                };
+                builderJwtSection.Bind(jwtOptions);
 
-                    options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-                    options.SaveToken = true;
-                    options.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidateIssuerSigningKey = true,
-                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SecretKey)),
-                        ValidateIssuer = true,
-                        ValidIssuer = jwtOptions.Issuer,
-                        ValidateAudience = true,
-                        ValidAudience = jwtOptions.Audience,
-                        ValidateLifetime = true,
-                        ClockSkew = TimeSpan.Zero
-                    };
-                });
-
-            builder.Services.AddAuthorization();
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = jwtOptions.Issuer,
+                    ValidAudience = jwtOptions.Audience,
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SecurityKey))
+                };
+            });
+        }
+        else
+        {
+            // Log warning that JWT is not configured for local development
+            Log.Warning("JWT configuration not found - API will start but authentication will not work. Configure JWT secrets for full functionality.");
         }
     }
 
-    // Health checks
+    builder.Services.AddAuthorization();
+
+   builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders =
+            ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+
     builder.Services.AddHealthChecks()
         .AddDbContextCheck<UploadDbContext>("UploadDbContext", tags: new[] { "readiness" })
-        .AddCheck("Liveness Check", () => HealthCheckResult.Healthy(), tags: new[] { "liveness" });
+        .AddCheck<DatabaseHealthCheck>("Database Health Check", tags: new[] { "readiness" });
 
     var app = builder.Build();
+
+    app.UseForwardedHeaders();
 
     // Configure the HTTP request pipeline
     app.UseSecurityHeaders();
@@ -195,48 +250,34 @@ try
 
     // Add security middleware
     app.UseHttpsRedirection();
-    app.UseCors();
     app.UseRateLimiter();
+    app.UseCors();
 
-    // Authentication & Authorization
-    app.UseAuthentication();
-    app.UseAuthorization();
+    // JWT Authentication & Authorization (only if configured and not in Testing environment)
+    if (!app.Environment.IsEnvironment("Testing"))
+    {
+        var appJwtSection = app.Configuration.GetSection(JwtOptions.SectionName);
+        if (appJwtSection.Exists())
+        {
+            app.UseAuthentication();
+            app.UseAuthorization();
+        }
+    }
 
-    // Health checks
-    app.MapGet("/uploads/liveness", () => "Healthy")
-        .WithTags("Health")
-        .AllowAnonymous();
+    // Health check endpoints (allow anonymous access for monitoring)
+    app.MapGet("/uploads/liveness", () => "Healthy").AllowAnonymous();
 
     app.MapHealthChecks("/uploads/readiness", new HealthCheckOptions
     {
         Predicate = healthCheck => healthCheck.Tags.Contains("ready"),
         ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
     })
-    .WithTags("Health")
     .AllowAnonymous();
-
-    // Prometheus metrics removed
 
     app.MapControllers()
         .RequireRateLimiting("UploadPolicy");
 
-    // Database migration in development
-    if (app.Environment.IsDevelopment())
-    {
-        try
-        {
-            using var scope = app.Services.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
-            await context.Database.MigrateAsync();
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "Failed to run database migrations during startup");
-        }
-    }
-
-    Log.Information("Clean Maliev Upload Service v1.0 started successfully - Path-based architecture only");
-    await app.RunAsync();
+    app.Run();
 }
 catch (Exception ex)
 {
@@ -248,4 +289,5 @@ finally
     Log.CloseAndFlush();
 }
 
-public partial class Program { }
+public partial class Program
+{ }
