@@ -11,7 +11,7 @@
 .PARAMETER LocalPort
     Local port for port forwarding (default: 5432)
 .EXAMPLE
-    .\deploy-migration-v2.ps1 -ServiceName country -Environment staging -LocalPort 5433
+    .\deploy-migration-v2.ps1 -ServiceName country -Environment staging -LocalPort 5432
 .EXAMPLE
     .\deploy-migration-v2.ps1  # Will prompt for all values
 #>
