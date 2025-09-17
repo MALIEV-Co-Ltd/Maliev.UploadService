@@ -269,7 +269,7 @@ try
 
     app.MapHealthChecks("/uploads/readiness", new HealthCheckOptions
     {
-        Predicate = healthCheck => healthCheck.Tags.Contains("ready"),
+        Predicate = healthCheck => healthCheck.Tags.Contains("readiness"),
         ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
     })
     .AllowAnonymous();
