@@ -1,51 +1,31 @@
-# Use the official .NET 9.0 runtime as base image
+# See https://aka.ms/customizecontainer to learn how to customize your debug container and how Visual Studio uses this Dockerfile to build your images for faster debugging.
+
+# This stage is used when running from VS in fast mode (Default for Debug configuration)
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS base
+USER $APP_UID
 WORKDIR /app
 EXPOSE 8080
 EXPOSE 8081
 
-# Use .NET 9.0 SDK for building
+
+# This stage is used to build the service project
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-
-# Copy project files
 COPY ["Maliev.UploadService.Api/Maliev.UploadService.Api.csproj", "Maliev.UploadService.Api/"]
 COPY ["Maliev.UploadService.Data/Maliev.UploadService.Data.csproj", "Maliev.UploadService.Data/"]
-
-# Restore dependencies
 RUN dotnet restore "./Maliev.UploadService.Api/Maliev.UploadService.Api.csproj"
-
-# Copy all source code
 COPY . .
-
-# Build the application
 WORKDIR "/src/Maliev.UploadService.Api"
 RUN dotnet build "./Maliev.UploadService.Api.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
-# Publish the application
+# This stage is used to publish the service project to be copied to the final stage
 FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./Maliev.UploadService.Api.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
-# Final stage - runtime image
+# This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
 FROM base AS final
 WORKDIR /app
-
-# Copy the published application
 COPY --from=publish /app/publish .
-
-# Create non-root user for security
-RUN adduser --disabled-password --gecos "" --uid 1001 appuser && chown -R appuser /app
-USER appuser
-
-# Set environment variables
-ENV ASPNETCORE_ENVIRONMENT=Production
-ENV ASPNETCORE_URLS=http://+:8080
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/uploads/liveness || exit 1
-
-# Entry point
 ENTRYPOINT ["dotnet", "Maliev.UploadService.Api.dll"]
