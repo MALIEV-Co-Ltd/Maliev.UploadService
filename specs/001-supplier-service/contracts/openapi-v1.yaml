@@ -1,0 +1,1266 @@
+openapi: 3.1.0
+info:
+  title: MALIEV Supplier Service API
+  description: |
+    The Supplier Service is the authoritative source of supplier information within the MALIEV microservices ecosystem.
+    It provides APIs for managing supplier records, contacts, certifications, performance evaluations, and audit trails.
+  version: 1.0.0
+  contact:
+    name: MALIEV Development Team
+    email: dev@maliev.com
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://api.maliev.com
+    description: Production
+
+tags:
+  - name: Suppliers
+    description: Core supplier management operations
+  - name: Contacts
+    description: Supplier contact management
+  - name: Certifications
+    description: Supplier certification and compliance documents
+  - name: Performance
+    description: Supplier performance evaluations
+  - name: Audit
+    description: Audit trail access
+  - name: Integration
+    description: Service-to-service integration endpoints
+
+paths:
+  /suppliers/v1/suppliers:
+    get:
+      tags: [Suppliers]
+      operationId: listSuppliers
+      summary: List suppliers with filtering and pagination
+      description: Returns a paginated list of suppliers with optional filters
+      parameters:
+        - $ref: '#/components/parameters/PageNumber'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/SupplierStatus'
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: capability
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Search by company name
+          schema:
+            type: string
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum: [name, createdAt, rating]
+            default: name
+        - name: sortOrder
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+      responses:
+        '200':
+          description: Paginated list of suppliers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - bearerAuth: []
+
+    post:
+      tags: [Suppliers]
+      operationId: createSupplier
+      summary: Register a new supplier
+      description: Creates a new supplier with initial status "PendingApproval"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplierRequest'
+      responses:
+        '201':
+          description: Supplier created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+          headers:
+            Location:
+              schema:
+                type: string
+              description: URL of created supplier
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Duplicate tax ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - bearerAuth: []
+
+  /suppliers/v1/suppliers/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SupplierId'
+
+    get:
+      tags: [Suppliers]
+      operationId: getSupplier
+      summary: Get supplier details
+      description: Returns complete supplier profile including contacts, certifications, and performance summary
+      responses:
+        '200':
+          description: Supplier details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierDetailResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+    put:
+      tags: [Suppliers]
+      operationId: updateSupplier
+      summary: Update supplier information
+      description: Updates supplier fields. Supports partial updates.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSupplierRequest'
+      responses:
+        '200':
+          description: Supplier updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Concurrency conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - bearerAuth: []
+
+    delete:
+      tags: [Suppliers]
+      operationId: deleteSupplier
+      summary: Delete a supplier
+      description: |
+        Deletes a supplier if not referenced by other services.
+        Performs synchronous checks with Purchase Order, Invoice, and Stock services.
+      responses:
+        '204':
+          description: Supplier deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Supplier has active references
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyErrorResponse'
+        '503':
+          description: Dependency service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - bearerAuth: []
+
+  /suppliers/v1/suppliers/{id}/status:
+    parameters:
+      - $ref: '#/components/parameters/SupplierId'
+
+    patch:
+      tags: [Suppliers]
+      operationId: updateSupplierStatus
+      summary: Update supplier status
+      description: Changes supplier operational status (Active, Suspended, Inactive)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  /suppliers/v1/suppliers/{id}/onboarding:
+    parameters:
+      - $ref: '#/components/parameters/SupplierId'
+
+    post:
+      tags: [Suppliers]
+      operationId: advanceOnboarding
+      summary: Advance onboarding stage
+      description: Transitions supplier to the next onboarding stage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvanceOnboardingRequest'
+      responses:
+        '200':
+          description: Onboarding stage advanced
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingStatusResponse'
+        '400':
+          description: Invalid stage transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+    get:
+      tags: [Suppliers]
+      operationId: getOnboardingHistory
+      summary: Get onboarding history
+      description: Returns all onboarding stage transitions for a supplier
+      responses:
+        '200':
+          description: Onboarding history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OnboardingStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  # Contacts
+  /suppliers/v1/suppliers/{id}/contacts:
+    parameters:
+      - $ref: '#/components/parameters/SupplierId'
+
+    get:
+      tags: [Contacts]
+      operationId: listContacts
+      summary: List supplier contacts
+      responses:
+        '200':
+          description: List of contacts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContactResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+    post:
+      tags: [Contacts]
+      operationId: createContact
+      summary: Add a contact to supplier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContactRequest'
+      responses:
+        '201':
+          description: Contact created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  /suppliers/v1/suppliers/{supplierId}/contacts/{contactId}:
+    parameters:
+      - name: supplierId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: contactId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    put:
+      tags: [Contacts]
+      operationId: updateContact
+      summary: Update a contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateContactRequest'
+      responses:
+        '200':
+          description: Contact updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContactResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+    delete:
+      tags: [Contacts]
+      operationId: deleteContact
+      summary: Delete a contact
+      responses:
+        '204':
+          description: Contact deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  # Certifications
+  /suppliers/v1/suppliers/{id}/certifications:
+    parameters:
+      - $ref: '#/components/parameters/SupplierId'
+
+    get:
+      tags: [Certifications]
+      operationId: listCertifications
+      summary: List supplier certifications
+      responses:
+        '200':
+          description: List of certifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CertificationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+    post:
+      tags: [Certifications]
+      operationId: createCertification
+      summary: Add certification metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCertificationRequest'
+      responses:
+        '201':
+          description: Certification created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificationResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  /suppliers/v1/certifications/expiring:
+    get:
+      tags: [Certifications]
+      operationId: getExpiringCertifications
+      summary: Get suppliers with expiring certifications
+      description: Returns suppliers with certifications expiring within specified days
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 365
+      responses:
+        '200':
+          description: List of suppliers with expiring certifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExpiringCertificationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - bearerAuth: []
+
+  # Performance Evaluations
+  /suppliers/v1/suppliers/{id}/evaluations:
+    parameters:
+      - $ref: '#/components/parameters/SupplierId'
+
+    get:
+      tags: [Performance]
+      operationId: listEvaluations
+      summary: List performance evaluations
+      parameters:
+        - $ref: '#/components/parameters/PageNumber'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Paginated list of evaluations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+    post:
+      tags: [Performance]
+      operationId: createEvaluation
+      summary: Record performance evaluation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEvaluationRequest'
+      responses:
+        '201':
+          description: Evaluation recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  /suppliers/v1/suppliers/{id}/evaluations/summary:
+    parameters:
+      - $ref: '#/components/parameters/SupplierId'
+
+    get:
+      tags: [Performance]
+      operationId: getEvaluationSummary
+      summary: Get performance summary
+      description: Returns aggregate performance metrics for a supplier
+      responses:
+        '200':
+          description: Performance summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PerformanceSummaryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  # Audit Trail
+  /suppliers/v1/suppliers/{id}/audit:
+    parameters:
+      - $ref: '#/components/parameters/SupplierId'
+
+    get:
+      tags: [Audit]
+      operationId: getAuditTrail
+      summary: Get supplier audit trail
+      parameters:
+        - $ref: '#/components/parameters/PageNumber'
+        - $ref: '#/components/parameters/PageSize'
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Paginated audit trail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditLogListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  # Integration Endpoints
+  /suppliers/v1/suppliers/{id}/validate:
+    parameters:
+      - $ref: '#/components/parameters/SupplierId'
+
+    get:
+      tags: [Integration]
+      operationId: validateSupplier
+      summary: Validate supplier exists and is queryable
+      description: Used by other services to validate supplier references
+      responses:
+        '200':
+          description: Supplier is valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierValidationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  /suppliers/v1/suppliers/{id}/eligibility:
+    parameters:
+      - $ref: '#/components/parameters/SupplierId'
+
+    get:
+      tags: [Integration]
+      operationId: checkEligibility
+      summary: Check supplier eligibility for purchase orders
+      description: Returns eligibility status based on active status and valid certifications
+      responses:
+        '200':
+          description: Eligibility check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierEligibilityResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      security:
+        - bearerAuth: []
+
+  # Material Categories (Lookup)
+  /suppliers/v1/categories:
+    get:
+      tags: [Suppliers]
+      operationId: listCategories
+      summary: List material categories
+      responses:
+        '200':
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MaterialCategoryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      security:
+        - bearerAuth: []
+
+  # Health Checks
+  /suppliers/liveness:
+    get:
+      tags: [Health]
+      operationId: liveness
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service is alive
+
+  /suppliers/readiness:
+    get:
+      tags: [Health]
+      operationId: readiness
+      summary: Readiness probe
+      responses:
+        '200':
+          description: Service is ready
+        '503':
+          description: Service is not ready
+
+  /suppliers/metrics:
+    get:
+      tags: [Health]
+      operationId: metrics
+      summary: Prometheus metrics
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    SupplierId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Supplier unique identifier
+
+    PageNumber:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  responses:
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorResponse'
+
+  schemas:
+    # Enums
+    SupplierStatus:
+      type: string
+      enum: [PendingApproval, Active, Suspended, Inactive]
+
+    OnboardingStage:
+      type: string
+      enum: [PendingApproval, DocumentationReview, FinalApproval, Active]
+
+    CertificationType:
+      type: string
+      enum: [TaxForm, BusinessLicense, RegulatoryCompliance, QualityCertification, InsuranceCertificate, Other]
+
+    PerformanceRatingCategory:
+      type: string
+      enum: [Quality, Delivery, Communication, Pricing, Overall]
+
+    # Request DTOs
+    CreateSupplierRequest:
+      type: object
+      required: [companyName, taxId, address, city, country]
+      properties:
+        companyName:
+          type: string
+          maxLength: 200
+        taxId:
+          type: string
+          maxLength: 50
+        address:
+          type: string
+          maxLength: 500
+        city:
+          type: string
+          maxLength: 100
+        country:
+          type: string
+          maxLength: 100
+        postalCode:
+          type: string
+          maxLength: 20
+        materialCategoryIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        capabilities:
+          type: array
+          items:
+            type: string
+        primaryContact:
+          $ref: '#/components/schemas/CreateContactRequest'
+
+    UpdateSupplierRequest:
+      type: object
+      required: [rowVersion]
+      properties:
+        companyName:
+          type: string
+          maxLength: 200
+        address:
+          type: string
+          maxLength: 500
+        city:
+          type: string
+          maxLength: 100
+        country:
+          type: string
+          maxLength: 100
+        postalCode:
+          type: string
+          maxLength: 20
+        materialCategoryIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        rowVersion:
+          type: string
+          format: byte
+          description: Base64-encoded row version for concurrency
+
+    UpdateStatusRequest:
+      type: object
+      required: [status, rowVersion]
+      properties:
+        status:
+          $ref: '#/components/schemas/SupplierStatus'
+        reason:
+          type: string
+          maxLength: 500
+        rowVersion:
+          type: string
+          format: byte
+
+    AdvanceOnboardingRequest:
+      type: object
+      required: [targetStage]
+      properties:
+        targetStage:
+          $ref: '#/components/schemas/OnboardingStage'
+        notes:
+          type: string
+          maxLength: 1000
+
+    CreateContactRequest:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        role:
+          type: string
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        phone:
+          type: string
+          maxLength: 50
+        isPrimary:
+          type: boolean
+          default: false
+
+    UpdateContactRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        role:
+          type: string
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        phone:
+          type: string
+          maxLength: 50
+        isPrimary:
+          type: boolean
+
+    CreateCertificationRequest:
+      type: object
+      required: [documentType, documentName, issueDate]
+      properties:
+        documentType:
+          $ref: '#/components/schemas/CertificationType'
+        documentName:
+          type: string
+          maxLength: 200
+        issueDate:
+          type: string
+          format: date
+        expirationDate:
+          type: string
+          format: date
+        externalFileRef:
+          type: string
+          maxLength: 500
+        notes:
+          type: string
+          maxLength: 1000
+
+    CreateEvaluationRequest:
+      type: object
+      required: [ratingCategory, score, evaluationDate]
+      properties:
+        ratingCategory:
+          $ref: '#/components/schemas/PerformanceRatingCategory'
+        score:
+          type: integer
+          minimum: 1
+          maximum: 5
+        evaluationDate:
+          type: string
+          format: date
+        notes:
+          type: string
+          maxLength: 2000
+
+    # Response DTOs
+    SupplierResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+        taxId:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+        country:
+          type: string
+        postalCode:
+          type: string
+        status:
+          $ref: '#/components/schemas/SupplierStatus'
+        onboardingStage:
+          $ref: '#/components/schemas/OnboardingStage'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        rowVersion:
+          type: string
+          format: byte
+
+    SupplierListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SupplierResponse'
+        totalCount:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalPages:
+          type: integer
+
+    SupplierDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/SupplierResponse'
+        - type: object
+          properties:
+            contacts:
+              type: array
+              items:
+                $ref: '#/components/schemas/ContactResponse'
+            materialCategories:
+              type: array
+              items:
+                $ref: '#/components/schemas/MaterialCategoryResponse'
+            capabilities:
+              type: array
+              items:
+                $ref: '#/components/schemas/CapabilityResponse'
+            certifications:
+              type: array
+              items:
+                $ref: '#/components/schemas/CertificationResponse'
+            performanceSummary:
+              $ref: '#/components/schemas/PerformanceSummaryResponse'
+
+    ContactResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        isPrimary:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    MaterialCategoryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+
+    CapabilityResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        isActive:
+          type: boolean
+
+    CertificationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        documentType:
+          $ref: '#/components/schemas/CertificationType'
+        documentName:
+          type: string
+        issueDate:
+          type: string
+          format: date
+        expirationDate:
+          type: string
+          format: date
+        externalFileRef:
+          type: string
+        isExpired:
+          type: boolean
+        isExpiringSoon:
+          type: boolean
+          description: Expiring within 30 days
+        createdAt:
+          type: string
+          format: date-time
+
+    ExpiringCertificationResponse:
+      type: object
+      properties:
+        supplierId:
+          type: string
+          format: uuid
+        supplierName:
+          type: string
+        certification:
+          $ref: '#/components/schemas/CertificationResponse'
+        daysUntilExpiration:
+          type: integer
+
+    EvaluationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ratingCategory:
+          $ref: '#/components/schemas/PerformanceRatingCategory'
+        score:
+          type: integer
+        evaluationDate:
+          type: string
+          format: date
+        evaluatorName:
+          type: string
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    EvaluationListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvaluationResponse'
+        totalCount:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    PerformanceSummaryResponse:
+      type: object
+      properties:
+        averageRating:
+          type: number
+          format: float
+        evaluationCount:
+          type: integer
+        lastEvaluationDate:
+          type: string
+          format: date
+        ratingsByCategory:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+
+    OnboardingStatusResponse:
+      type: object
+      properties:
+        stage:
+          $ref: '#/components/schemas/OnboardingStage'
+        transitionedAt:
+          type: string
+          format: date-time
+        transitionedByName:
+          type: string
+        notes:
+          type: string
+
+    AuditLogResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        changeType:
+          type: string
+          enum: [CREATE, UPDATE, DELETE]
+        changedByName:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        entityType:
+          type: string
+        entityId:
+          type: string
+          format: uuid
+        oldValues:
+          type: object
+        newValues:
+          type: object
+
+    AuditLogListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditLogResponse'
+        totalCount:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    SupplierValidationResponse:
+      type: object
+      properties:
+        supplierId:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+        status:
+          $ref: '#/components/schemas/SupplierStatus'
+        isValid:
+          type: boolean
+
+    SupplierEligibilityResponse:
+      type: object
+      properties:
+        supplierId:
+          type: string
+          format: uuid
+        companyName:
+          type: string
+        isEligible:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
+          description: Reasons for ineligibility if not eligible
+        status:
+          $ref: '#/components/schemas/SupplierStatus'
+        hasValidCertifications:
+          type: boolean
+        expiringCertificationsCount:
+          type: integer
+
+    # Error Responses
+    ErrorResponse:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        traceId:
+          type: string
+
+    ValidationErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+
+    DependencyErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/ErrorResponse'
+        - type: object
+          properties:
+            dependencies:
+              type: array
+              items:
+                type: object
+                properties:
+                  serviceName:
+                    type: string
+                  hasReferences:
+                    type: boolean
+                  referenceCount:
+                    type: integer
