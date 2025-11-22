@@ -1,0 +1,55 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE and editor
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Build directories
+**/bin/
+**/obj/
+**/out/
+
+# Test project
+Maliev.SupplierService.Tests/
+
+# Specification documents
+specs/
+
+# GitHub workflows
+.github/
+
+# Docker files
+**/Dockerfile*
+**/.dockerignore
+docker-compose*.yml
+
+# Documentation
+*.md
+!README.md
+
+# NuGet
+*.nupkg
+*.snupkg
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.*
+*.local
+
+# Test results
+TestResults/
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
