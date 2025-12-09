@@ -12,8 +12,19 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// TODO: Add ServiceDefaults (T056) - uncomment once Maliev.Aspire.ServiceDefaults package is available
-// builder.AddServiceDefaults();
+// ============================================================================
+// CONSTITUTION COMPLIANCE NOTE (Principle XIII - .NET Aspire Integration)
+// ============================================================================
+// The following ServiceDefaults calls are REQUIRED by constitution v1.7.0
+// but are commented out pending GitHub Packages authentication setup:
+//
+// builder.AddGoogleSecretManagerVolume(); // Load secrets from /mnt/secrets
+// builder.AddServiceDefaults(); // OpenTelemetry, health checks, resilience
+// builder.AddServiceMeters("uploadservice"); // Business metrics registration
+//
+// Once Maliev.Aspire.ServiceDefaults package is available via GitHub Packages,
+// uncomment these lines and remove manual infrastructure configuration below.
+// ============================================================================
 
 // Configure JWT Authentication (T048)
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -76,18 +87,18 @@ builder.Services.AddControllers()
 
 // Add DbContext (with health check - T059)
 builder.Services.AddDbContext<UploadServiceDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("PostgreSQL")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("UploadServiceDbContext")));
 
 // Add Redis caching (with health check - T059)
 builder.Services.AddStackExchangeRedisCache(options =>
 {
-    options.Configuration = builder.Configuration.GetConnectionString("Redis");
+    options.Configuration = builder.Configuration.GetConnectionString("redis");
 });
 
 // Add Health Checks (T059)
 builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("PostgreSQL")!, name: "postgresql")
-    .AddRedis(builder.Configuration.GetConnectionString("Redis")!, name: "redis");
+    .AddNpgSql(builder.Configuration.GetConnectionString("UploadServiceDbContext")!, name: "postgresql")
+    .AddRedis(builder.Configuration.GetConnectionString("redis")!, name: "redis");
 
 // T161: Configure MassTransit with RabbitMQ (FR-025)
 builder.Services.AddMassTransit(x =>
@@ -100,7 +111,7 @@ builder.Services.AddMassTransit(x =>
 
     x.UsingRabbitMq((context, cfg) =>
     {
-        cfg.Host(builder.Configuration.GetConnectionString("RabbitMQ") ?? "localhost", h =>
+        cfg.Host(builder.Configuration.GetConnectionString("rabbitmq") ?? "localhost", h =>
         {
             h.Username(builder.Configuration["RabbitMQ:Username"] ?? "guest");
             h.Password(builder.Configuration["RabbitMQ:Password"] ?? "guest");
@@ -168,8 +179,10 @@ await MigrateDatabaseAsync(app.Services);
 
 // TODO: Map default endpoints (T060) - uncomment once ServiceDefaults is configured
 // app.MapDefaultEndpoints(servicePrefix: "uploadservice");
+// app.MapApiDocumentation(servicePrefix: "uploadservice");
 
-// Configure middleware pipeline
+// Configure middleware pipeline (Constitution best practice: CorrelationId before Exception handling)
+app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 // Configure the HTTP request pipeline

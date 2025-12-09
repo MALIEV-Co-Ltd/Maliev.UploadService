@@ -71,10 +71,11 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // Set test connection strings in configuration before services are built
-        builder.UseSetting("ConnectionStrings:PostgreSQL", PostgresConnectionString);
-        builder.UseSetting("ConnectionStrings:Redis", RedisConnectionString);
+        builder.UseSetting("ConnectionStrings:UploadServiceDbContext", PostgresConnectionString);
+        builder.UseSetting("ConnectionStrings:redis", RedisConnectionString);
         // Use full RabbitMQ URI for testcontainer which includes random port
-        builder.UseSetting("ConnectionStrings:RabbitMQ", RabbitMqConnectionString);
+        builder.UseSetting("ConnectionStrings:rabbitmq", RabbitMqConnectionString);
+        builder.UseEnvironment("Testing");
 
         builder.ConfigureTestServices(services =>
         {
