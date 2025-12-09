@@ -1,0 +1,713 @@
+openapi: 3.0.3
+info:
+  title: Maliev Upload Service API
+  description: |
+    Core infrastructure microservice for secure file uploads to Google Cloud Storage.
+    Provides validation, authorization, lifecycle management, and access control for all MALIEV microservices.
+  version: 1.0.0
+  contact:
+    name: MALIEV Engineering
+    email: eng@maliev.com
+
+servers:
+  - url: https://api.maliev.com/upload-service/v1
+    description: Production
+  - url: https://staging-api.maliev.com/upload-service/v1
+    description: Staging
+  - url: http://localhost:8080/api/v1
+    description: Local Development
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Uploads
+    description: File upload operations
+  - name: Files
+    description: File metadata and retrieval
+  - name: Admin
+    description: Administrative operations
+
+paths:
+  /uploads:
+    post:
+      tags:
+        - Uploads
+      summary: Upload a file
+      description: |
+        Upload a file with validation. The file is streamed directly to GCS after passing
+        validation checks (size, content type, malware scanning).
+      operationId: uploadFile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - targetPath
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload
+                targetPath:
+                  type: string
+                  description: Target path in storage (relative path with optional placeholders)
+                  example: "pdf/receipts/{id}.pdf"
+                checksum:
+                  type: string
+                  description: Optional MD5 or SHA256 checksum for validation
+                  example: "d41d8cd98f00b204e9800998ecf8427e"
+                retentionPolicyId:
+                  type: string
+                  format: uuid
+                  description: Optional retention policy to apply
+                metadata:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Optional metadata tags
+      responses:
+        '200':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /uploads/resumable:
+    post:
+      tags:
+        - Uploads
+      summary: Initiate resumable upload
+      description: Start a resumable upload session for large files
+      operationId: initiateResumableUpload
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiateResumableUploadRequest'
+      responses:
+        '200':
+          description: Resumable upload session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitiateResumableUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /uploads/resumable/{uploadId}:
+    put:
+      tags:
+        - Uploads
+      summary: Continue resumable upload
+      description: Resume or continue an upload session with file content
+      operationId: resumeUpload
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Content-Range
+          in: header
+          required: true
+          description: Byte range being uploaded (e.g., "bytes 0-1023/2048")
+          schema:
+            type: string
+            example: "bytes 0-1023/2048"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Chunk uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResumeUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /files/{uploadId}:
+    get:
+      tags:
+        - Files
+      summary: Get file metadata
+      description: Retrieve metadata for a specific uploaded file
+      operationId: getFileMetadata
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: File metadata retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileMetadataResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Files
+      summary: Delete file
+      description: Delete a file from storage (subject to authorization and retention policy checks)
+      operationId: deleteFile
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: File deleted successfully
+        '400':
+          description: Deletion blocked by retention policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /files:
+    get:
+      tags:
+        - Files
+      summary: Query files by path prefix
+      description: List files matching a path prefix (paginated)
+      operationId: queryFiles
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: pathPrefix
+          in: query
+          required: true
+          description: Path prefix to search
+          schema:
+            type: string
+            example: "quotations/Q-2025-001/"
+        - name: page
+          in: query
+          description: Page number (1-based)
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+        - name: pageSize
+          in: query
+          description: Number of results per page
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+      responses:
+        '200':
+          description: Files retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryFilesResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /files/{uploadId}/signed-url:
+    post:
+      tags:
+        - Files
+      summary: Generate signed URL
+      description: Generate a time-limited signed URL for file access
+      operationId: generateSignedUrl
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateSignedUrlRequest'
+      responses:
+        '200':
+          description: Signed URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedUrlResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/bulk-delete:
+    post:
+      tags:
+        - Admin
+      summary: Initiate bulk delete job
+      description: Start a background job to delete files by service or path prefix
+      operationId: initiateBulkDelete
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkDeleteRequest'
+      responses:
+        '202':
+          description: Bulk delete job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/bulk-delete/{jobId}:
+    get:
+      tags:
+        - Admin
+      summary: Get bulk delete job status
+      description: Check the progress of a bulk delete job
+      operationId: getBulkDeleteJobStatus
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteJobResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from Authentication Service
+
+  schemas:
+    UploadResponse:
+      type: object
+      required:
+        - uploadId
+        - storagePath
+        - fileSize
+        - checksum
+        - uploadedAt
+        - signedUrl
+      properties:
+        uploadId:
+          type: string
+          format: uuid
+          description: Unique upload identifier
+        storagePath:
+          type: string
+          description: Final resolved path in storage
+          example: "pdf/receipts/12345.pdf"
+        versionETag:
+          type: string
+          description: GCS ETag for versioning
+        fileSize:
+          type: integer
+          format: int64
+          description: File size in bytes
+        checksum:
+          type: string
+          description: File checksum (MD5/SHA256)
+        uploadedAt:
+          type: string
+          format: date-time
+          description: Upload timestamp (ISO 8601)
+        signedUrl:
+          type: string
+          format: uri
+          description: Signed URL for immediate access (1 hour expiration)
+        expiresAt:
+          type: string
+          format: date-time
+          description: File expiration date (if retention policy applied)
+
+    InitiateResumableUploadRequest:
+      type: object
+      required:
+        - targetPath
+        - contentType
+        - fileSize
+      properties:
+        targetPath:
+          type: string
+          description: Target storage path
+          example: "scans/raw/{timestamp}/scan-data.stl"
+        contentType:
+          type: string
+          description: File MIME type
+          example: "model/stl"
+        fileSize:
+          type: integer
+          format: int64
+          description: Total file size in bytes
+        retentionPolicyId:
+          type: string
+          format: uuid
+          description: Optional retention policy
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Optional metadata tags
+
+    InitiateResumableUploadResponse:
+      type: object
+      required:
+        - uploadId
+        - sessionUri
+      properties:
+        uploadId:
+          type: string
+          format: uuid
+          description: Upload identifier for this session
+        sessionUri:
+          type: string
+          format: uri
+          description: GCS resumable session URI (internal use)
+
+    ResumeUploadResponse:
+      type: object
+      required:
+        - uploadId
+        - bytesUploaded
+        - totalBytes
+        - status
+      properties:
+        uploadId:
+          type: string
+          format: uuid
+        bytesUploaded:
+          type: integer
+          format: int64
+          description: Bytes uploaded so far
+        totalBytes:
+          type: integer
+          format: int64
+          description: Total file size
+        status:
+          type: string
+          enum: [InProgress, Completed]
+          description: Upload status
+
+    FileMetadataResponse:
+      type: object
+      required:
+        - fileId
+        - uploadId
+        - storagePath
+        - fileSize
+        - contentType
+        - uploadedAt
+      properties:
+        fileId:
+          type: string
+          format: uuid
+        uploadId:
+          type: string
+          format: uuid
+        storagePath:
+          type: string
+        versionETag:
+          type: string
+        fileSize:
+          type: integer
+          format: int64
+        contentType:
+          type: string
+        checksum:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+        lastAccessedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        storageClass:
+          type: string
+          enum: [STANDARD, NEARLINE, COLDLINE, ARCHIVE]
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    QueryFilesResponse:
+      type: object
+      required:
+        - files
+        - pagination
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileMetadataResponse'
+        pagination:
+          type: object
+          required:
+            - page
+            - pageSize
+            - totalCount
+            - totalPages
+          properties:
+            page:
+              type: integer
+            pageSize:
+              type: integer
+            totalCount:
+              type: integer
+            totalPages:
+              type: integer
+
+    GenerateSignedUrlRequest:
+      type: object
+      properties:
+        expirationMinutes:
+          type: integer
+          default: 60
+          minimum: 1
+          maximum: 10080
+          description: URL expiration in minutes (max 7 days)
+
+    SignedUrlResponse:
+      type: object
+      required:
+        - signedUrl
+        - expiresAt
+      properties:
+        signedUrl:
+          type: string
+          format: uri
+          description: Time-limited signed URL
+        expiresAt:
+          type: string
+          format: date-time
+          description: URL expiration timestamp
+
+    BulkDeleteRequest:
+      type: object
+      required:
+        - targetType
+        - targetValue
+      properties:
+        targetType:
+          type: string
+          enum: [ServiceId, PathPrefix]
+          description: What to target for deletion
+        targetValue:
+          type: string
+          description: Service ID or path prefix
+          example: "pdf-service" or "quotations/Q-2025-001/"
+
+    BulkDeleteJobResponse:
+      type: object
+      required:
+        - jobId
+        - serviceId
+        - pathPrefix
+        - status
+        - filesTotal
+        - filesProcessed
+        - filesDeleted
+        - errorCount
+        - createdAt
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        serviceId:
+          type: string
+        pathPrefix:
+          type: string
+        status:
+          type: string
+          enum: [Queued, InProgress, Completed, CompletedWithErrors, Failed, Cancelled]
+        filesTotal:
+          type: integer
+          description: Total files to delete
+        filesProcessed:
+          type: integer
+          description: Files processed so far
+        filesDeleted:
+          type: integer
+          description: Files successfully deleted
+        errorCount:
+          type: integer
+          description: Number of deletion failures
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        errorDetails:
+          type: array
+          items:
+            type: string
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+          example: "VALIDATION_FAILED"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "File exceeds service quota limit"
+        details:
+          type: object
+          description: Additional error context
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PayloadTooLarge:
+      description: File exceeds size limit
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

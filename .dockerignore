@@ -1,0 +1,32 @@
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+LICENSE
+specs/
+
+# Tests
+**/[Tt]ests/
+**/*[Tt]est*.csproj
+
+# Build output
+**/bin/
+**/obj/
+**/out/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Misc
+.dockerignore
+docker-compose*.yml
+Dockerfile*

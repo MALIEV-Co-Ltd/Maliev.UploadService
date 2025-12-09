@@ -1,0 +1,142 @@
+using Maliev.UploadService.Api.Models.Entities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using System.Text.Json;
+
+namespace Maliev.UploadService.Api.Data;
+
+public class UploadServiceDbContext : DbContext
+{
+    public UploadServiceDbContext(DbContextOptions<UploadServiceDbContext> options)
+        : base(options)
+    {
+    }
+
+    public DbSet<Upload> Uploads { get; set; } = null!;
+    public DbSet<FileMetadata> FileMetadata { get; set; } = null!;
+    public DbSet<ServiceAuthorizationPolicy> ServiceAuthorizationPolicies { get; set; } = null!;
+    public DbSet<RetentionPolicy> RetentionPolicies { get; set; } = null!;
+    public DbSet<UploadEvent> UploadEvents { get; set; } = null!;
+    public DbSet<BulkDeleteJob> BulkDeleteJobs { get; set; } = null!;
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        // JSON converters for Dictionary properties (works with both PostgreSQL and InMemory)
+        var dictionaryConverter = new ValueConverter<Dictionary<string, string>?, string?>(
+            v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => v == null ? null : JsonSerializer.Deserialize<Dictionary<string, string>>(v, (JsonSerializerOptions?)null));
+
+        // Nullable list converter
+        var stringListConverterNullable = new ValueConverter<List<string>?, string?>(
+            v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => v == null ? null : JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null));
+
+        // Non-nullable list converter
+        var stringListConverter = new ValueConverter<List<string>, string?>(
+            v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => JsonSerializer.Deserialize<List<string>>(v!, (JsonSerializerOptions?)null) ?? new List<string>());
+
+        var storageClassTransitionListConverter = new ValueConverter<List<StorageClassTransition>?, string?>(
+            v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
+            v => v == null ? null : JsonSerializer.Deserialize<List<StorageClassTransition>>(v, (JsonSerializerOptions?)null));
+
+        // Upload configuration
+        modelBuilder.Entity<Upload>(entity =>
+        {
+            entity.ToTable("uploads");
+            entity.HasKey(e => e.UploadId);
+            entity.Property(e => e.UploadId).ValueGeneratedNever();
+            entity.Property(e => e.Status).HasConversion<string>();
+            entity.Property(e => e.Metadata)
+                .HasConversion(dictionaryConverter)
+                .HasColumnType("jsonb");
+            entity.HasIndex(e => e.ServiceId).HasDatabaseName("idx_uploads_service_id");
+            entity.HasIndex(e => e.Status).HasDatabaseName("idx_uploads_status");
+            entity.HasIndex(e => e.UploadedAt).HasDatabaseName("idx_uploads_uploaded_at");
+            entity.HasIndex(e => e.StoragePath).IsUnique().HasDatabaseName("idx_uploads_storage_path");
+        });
+
+        // FileMetadata configuration
+        modelBuilder.Entity<FileMetadata>(entity =>
+        {
+            entity.ToTable("file_metadata");
+            entity.HasKey(e => e.FileId);
+            entity.Property(e => e.FileId).ValueGeneratedNever();
+            entity.Property(e => e.Metadata)
+                .HasConversion(dictionaryConverter)
+                .HasColumnType("jsonb");
+            entity.HasIndex(e => e.ServiceId).HasDatabaseName("idx_filemetadata_service_id");
+            entity.HasIndex(e => e.StoragePath).IsUnique().HasDatabaseName("idx_filemetadata_storage_path");
+            entity.HasIndex(e => e.ExpiresAt).HasDatabaseName("idx_filemetadata_expires_at");
+            entity.HasIndex(e => e.UploadedAt).HasDatabaseName("idx_filemetadata_uploaded_at");
+            entity.HasOne<Upload>()
+                .WithOne()
+                .HasForeignKey<FileMetadata>(e => e.UploadId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // ServiceAuthorizationPolicy configuration
+        modelBuilder.Entity<ServiceAuthorizationPolicy>(entity =>
+        {
+            entity.ToTable("service_authorization_policies");
+            entity.HasKey(e => e.PolicyId);
+            entity.Property(e => e.PolicyId).ValueGeneratedNever();
+            entity.Property(e => e.AllowedPathPrefixes)
+                .HasConversion(stringListConverter)
+                .HasColumnType("jsonb");
+            entity.Property(e => e.AllowedContentTypes)
+                .HasConversion(stringListConverter)
+                .HasColumnType("jsonb");
+            entity.HasIndex(e => e.ServiceId).IsUnique().HasDatabaseName("idx_authz_policy_service_id");
+            entity.HasIndex(e => e.IsActive).HasDatabaseName("idx_authz_policy_is_active");
+        });
+
+        // RetentionPolicy configuration
+        modelBuilder.Entity<RetentionPolicy>(entity =>
+        {
+            entity.ToTable("retention_policies");
+            entity.HasKey(e => e.PolicyId);
+            entity.Property(e => e.PolicyId).ValueGeneratedNever();
+            entity.Property(e => e.StorageClassTransitions)
+                .HasConversion(storageClassTransitionListConverter)
+                .HasColumnType("jsonb");
+            entity.HasIndex(e => e.ServiceId).HasDatabaseName("idx_retention_policy_service_id");
+            entity.HasIndex(e => e.IsActive).HasDatabaseName("idx_retention_policy_is_active");
+        });
+
+        // UploadEvent configuration
+        modelBuilder.Entity<UploadEvent>(entity =>
+        {
+            entity.ToTable("upload_events");
+            entity.HasKey(e => e.EventId);
+            entity.Property(e => e.EventId).ValueGeneratedNever();
+            entity.Property(e => e.EventType).HasConversion<string>();
+            entity.Property(e => e.EventResult).HasConversion<string>();
+            entity.Property(e => e.Metadata)
+                .HasConversion(dictionaryConverter)
+                .HasColumnType("jsonb");
+            entity.HasIndex(e => e.ServiceId).HasDatabaseName("idx_upload_events_service_id");
+            entity.HasIndex(e => e.EventType).HasDatabaseName("idx_upload_events_event_type");
+            entity.HasIndex(e => e.EventTimestamp).HasDatabaseName("idx_upload_events_timestamp");
+            entity.HasIndex(e => e.UploadId).HasDatabaseName("idx_upload_events_upload_id");
+            entity.HasIndex(e => e.FileId).HasDatabaseName("idx_upload_events_file_id");
+        });
+
+        // BulkDeleteJob configuration
+        modelBuilder.Entity<BulkDeleteJob>(entity =>
+        {
+            entity.ToTable("bulk_delete_jobs");
+            entity.HasKey(e => e.JobId);
+            entity.Property(e => e.JobId).ValueGeneratedNever();
+            entity.Property(e => e.Status).HasConversion<string>();
+            entity.Property(e => e.ErrorDetails)
+                .HasConversion(stringListConverterNullable)
+                .HasColumnType("jsonb");
+            entity.HasIndex(e => e.ServiceId).HasDatabaseName("idx_bulk_delete_service_id");
+            entity.HasIndex(e => e.Status).HasDatabaseName("idx_bulk_delete_status");
+            entity.HasIndex(e => e.CreatedAt).HasDatabaseName("idx_bulk_delete_created_at");
+        });
+    }
+}
