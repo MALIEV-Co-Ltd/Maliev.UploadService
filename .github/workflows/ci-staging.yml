@@ -1,4 +1,4 @@
-name: Release Candidate to Staging
+﻿name: Release Candidate to Staging
 
 on:
   push:
@@ -16,10 +16,19 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "9.x"
+          dotnet-version: "10.x"
+
+      - name: Switch to PackageReference for CI build
+        run: |
+          # Replace ProjectReference with PackageReference in all service csproj files
+          find . -name "*.csproj" -type f -exec sed -i 's|<ProjectReference Include=".*Maliev.Aspire.ServiceDefaults.*.csproj" />|<PackageReference Include="Maliev.Aspire.ServiceDefaults" Version="1.0.*" />|g' {} \;
+          echo "Switched to PackageReference for ServiceDefaults"
 
       - name: Restore dependencies
         run: dotnet restore Maliev.UploadService.sln
+        env:
+          NUGET_USERNAME: ${{ github.actor }}
+          NUGET_PASSWORD: ${{ secrets.GITOPS_PAT }}
 
       - name: Build
         run: dotnet build Maliev.UploadService.sln --no-restore
@@ -42,7 +51,7 @@ jobs:
         run: |
           gcloud auth configure-docker asia-southeast1-docker.pkg.dev
           export RELEASE_VERSION=$(echo ${{ github.ref }} | sed -e 's,.*/v,,g')
-          docker build -t asia-southeast1-docker.pkg.dev/maliev-website/maliev-website-artifact-staging/maliev-upload-service:$RELEASE_VERSION -f Maliev.UploadService.Api/Dockerfile .
+          NUGET_USERNAME=${{ github.actor }} NUGET_PASSWORD=${{ secrets.GITOPS_PAT }} docker build --secret id=nuget_username,env=NUGET_USERNAME --secret id=nuget_password,env=NUGET_PASSWORD -t asia-southeast1-docker.pkg.dev/maliev-website/maliev-website-artifact-staging/maliev-upload-service:$RELEASE_VERSION -f Maliev.UploadService.Api/Dockerfile .
           docker push asia-southeast1-docker.pkg.dev/maliev-website/maliev-website-artifact-staging/maliev-upload-service:$RELEASE_VERSION
 
       - name: Checkout maliev-gitops repository
@@ -63,13 +72,38 @@ jobs:
           cd maliev-gitops/3-apps/maliev-upload-service/overlays/staging
           kustomize edit set image asia-southeast1-docker.pkg.dev/maliev-website/maliev-website-artifact/maliev-upload-service=asia-southeast1-docker.pkg.dev/maliev-website/maliev-website-artifact-staging/maliev-upload-service:$RELEASE_VERSION
 
-      - name: Commit and push changes
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_PAT }}
+          PR_BODY: |
+            Automated deployment of upload-service to staging environment.
+
+            Release: $RELEASE_VERSION
+            Tag: ${{ github.ref }}
+            Triggered by: ${{ github.actor }}
+            Workflow: ${{ github.workflow }}
         run: |
           cd maliev-gitops
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add .
+
+          # Extract release version
           export RELEASE_VERSION=$(echo ${{ github.ref }} | sed -e 's,.*/v,,g')
-          git commit -m "Update maliev-upload-service image to $RELEASE_VERSION" || exit 0
-          git pull --rebase origin $(git branch --show-current) || true
-          git push
+
+          # Create a new branch for this update
+          BRANCH_NAME="upload-service/staging-$RELEASE_VERSION"
+          git checkout -b $BRANCH_NAME
+
+          # Commit and push changes to the new branch
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "Update upload-service image to $RELEASE_VERSION"
+          git push origin $BRANCH_NAME
+
+          # Create pull request using GitHub CLI
+          gh pr create             --title "Deploy upload-service $RELEASE_VERSION to staging"             --body "$PR_BODY"             --base main             --head $BRANCH_NAME             --repo MALIEV-Co-Ltd/maliev-gitops
+
