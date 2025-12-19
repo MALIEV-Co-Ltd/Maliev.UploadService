@@ -6,7 +6,8 @@ using Xunit;
 
 namespace Maliev.UploadService.Tests.Integration;
 
-public class FileValidationTests : IClassFixture<TestWebApplicationFactory>
+[Collection("Database")]
+public class FileValidationTests
 {
     private readonly TestWebApplicationFactory _factory;
 
@@ -31,7 +32,7 @@ public class FileValidationTests : IClassFixture<TestWebApplicationFactory>
         content.Add(new StringContent("test-service"), "ServiceName");
 
         // Act
-        var response = await client.PostAsync("/api/v1/uploads", content);
+        var response = await client.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -55,7 +56,7 @@ public class FileValidationTests : IClassFixture<TestWebApplicationFactory>
         content.Add(new StringContent("test-service"), "ServiceName");
 
         // Act
-        var response = await client.PostAsync("/api/v1/uploads", content);
+        var response = await client.PostAsync("/upload/v1/uploads", content);
 
         // Assert - Should detect PNG and either reject or correct the content type
         // Implementation detail: depends on whether PNG is allowed and how strict validation is

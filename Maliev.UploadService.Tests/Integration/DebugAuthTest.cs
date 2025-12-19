@@ -12,7 +12,8 @@ using Xunit.Abstractions;
 
 namespace Maliev.UploadService.Tests.Integration;
 
-public class DebugAuthTest : IClassFixture<TestWebApplicationFactory>
+[Collection("Database")]
+public class DebugAuthTest
 {
     private readonly TestWebApplicationFactory _factory;
     private readonly ITestOutputHelper _output;
@@ -39,7 +40,7 @@ public class DebugAuthTest : IClassFixture<TestWebApplicationFactory>
         content.Add(new StringContent("test-service/private/private.txt"), "Path");
         content.Add(new StringContent("test-service"), "ServiceName");
 
-        var uploadResponse = await client.PostAsync("/api/v1/uploads", content);
+        var uploadResponse = await client.PostAsync("/upload/v1/uploads", content);
         var uploadResult = await uploadResponse.Content.ReadFromJsonAsync<UploadResponse>();
         var uploadId = uploadResult!.UploadId;
 
@@ -48,7 +49,7 @@ public class DebugAuthTest : IClassFixture<TestWebApplicationFactory>
 
         // Get file metadata using the upload service's database context
         using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<Api.Data.UploadServiceDbContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Data.UploadDbContext>();
         var fileMetadata = await dbContext.FileMetadata.FindAsync(uploadId);
 
         _output.WriteLine($"FileMetadata UploadId: {fileMetadata?.UploadId}");
@@ -57,7 +58,7 @@ public class DebugAuthTest : IClassFixture<TestWebApplicationFactory>
 
         // Try to access as other-service
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", otherServiceToken);
-        var response = await client.GetAsync($"/api/v1/files/{uploadId}");
+        var response = await client.GetAsync($"/upload/v1/files/{uploadId}");
 
         _output.WriteLine($"Response Status: {response.StatusCode}");
         var responseBody = await response.Content.ReadAsStringAsync();
@@ -75,8 +76,8 @@ public class DebugAuthTest : IClassFixture<TestWebApplicationFactory>
 
         var credentials = _factory.SigningCredentials;
         var token = new JwtSecurityToken(
-            issuer: "https://test.maliev.com",
-            audience: audience,
+            issuer: "test-issuer",
+            audience: "test-audience",
             claims: claims,
             expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: credentials

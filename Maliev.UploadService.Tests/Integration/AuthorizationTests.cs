@@ -11,7 +11,8 @@ using Xunit;
 
 namespace Maliev.UploadService.Tests.Integration;
 
-public class AuthorizationTests : IClassFixture<TestWebApplicationFactory>, IAsyncLifetime
+[Collection("Database")]
+public class AuthorizationTests : IAsyncLifetime
 {
     private readonly TestWebApplicationFactory _factory;
     private HttpClient _client = null!;
@@ -39,13 +40,15 @@ public class AuthorizationTests : IClassFixture<TestWebApplicationFactory>, IAsy
         content.Add(new StringContent("test-service/private/private.txt"), "Path");
         content.Add(new StringContent("test-service"), "ServiceName");
 
-        var uploadResponse = await _client.PostAsync("/api/v1/uploads", content);
+        var uploadResponse = await _client.PostAsync("/upload/v1/uploads", content);
         var uploadResult = await uploadResponse.Content.ReadFromJsonAsync<UploadResponse>();
         _uploadId = uploadResult!.UploadId;
     }
 
     public Task DisposeAsync()
     {
+        // Don't delete the file here - all tests in this class use the same upload
+        // The file will be cleaned up when the test database is torn down
         _client?.Dispose();
         return Task.CompletedTask;
     }
@@ -53,11 +56,24 @@ public class AuthorizationTests : IClassFixture<TestWebApplicationFactory>, IAsy
     [Fact]
     public async Task GetFileMetadata_UnauthorizedService_ReturnsForbidden()
     {
+        // Upload a fresh file for this test
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _testServiceToken);
+        var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes("File for metadata test"));
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        content.Add(fileContent, "File", "metadata-test.txt");
+        content.Add(new StringContent("test-service/auth-tests/metadata-test.txt"), "Path");
+        content.Add(new StringContent("test-service"), "ServiceName");
+
+        var uploadResponse = await _client.PostAsync("/upload/v1/uploads", content);
+        var uploadResult = await uploadResponse.Content.ReadFromJsonAsync<UploadResponse>();
+        var testUploadId = uploadResult!.UploadId;
+
         // Arrange - switch to other-service token
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _otherServiceToken);
 
         // Act
-        var response = await _client.GetAsync($"/api/v1/files/{_uploadId}");
+        var response = await _client.GetAsync($"/upload/v1/files/{testUploadId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -66,12 +82,25 @@ public class AuthorizationTests : IClassFixture<TestWebApplicationFactory>, IAsy
     [Fact]
     public async Task GenerateSignedUrl_UnauthorizedService_ReturnsForbidden()
     {
+        // Upload a fresh file for this test
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _testServiceToken);
+        var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes("File for signed URL test"));
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        content.Add(fileContent, "File", "signed-url-test.txt");
+        content.Add(new StringContent("test-service/auth-tests/signed-url-test.txt"), "Path");
+        content.Add(new StringContent("test-service"), "ServiceName");
+
+        var uploadResponse = await _client.PostAsync("/upload/v1/uploads", content);
+        var uploadResult = await uploadResponse.Content.ReadFromJsonAsync<UploadResponse>();
+        var testUploadId = uploadResult!.UploadId;
+
         // Arrange
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _otherServiceToken);
         var request = new { ExpirationMinutes = 60 };
 
         // Act
-        var response = await _client.PostAsJsonAsync($"/api/v1/files/{_uploadId}/signed-url", request);
+        var response = await _client.PostAsJsonAsync($"/upload/v1/files/{testUploadId}/signed-url", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -80,11 +109,24 @@ public class AuthorizationTests : IClassFixture<TestWebApplicationFactory>, IAsy
     [Fact]
     public async Task DeleteFile_UnauthorizedService_ReturnsForbidden()
     {
+        // Upload a fresh file for this test
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _testServiceToken);
+        var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes("File for delete test"));
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        content.Add(fileContent, "File", "delete-test.txt");
+        content.Add(new StringContent("test-service/auth-tests/delete-test.txt"), "Path");
+        content.Add(new StringContent("test-service"), "ServiceName");
+
+        var uploadResponse = await _client.PostAsync("/upload/v1/uploads", content);
+        var uploadResult = await uploadResponse.Content.ReadFromJsonAsync<UploadResponse>();
+        var testUploadId = uploadResult!.UploadId;
+
         // Arrange
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _otherServiceToken);
 
         // Act
-        var response = await _client.DeleteAsync($"/api/v1/files/{_uploadId}");
+        var response = await _client.DeleteAsync($"/upload/v1/files/{testUploadId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -101,8 +143,8 @@ public class AuthorizationTests : IClassFixture<TestWebApplicationFactory>, IAsy
         };
 
         var token = new JwtSecurityToken(
-            issuer: "https://test.maliev.com",
-            audience: audience,
+            issuer: "test-issuer",
+            audience: "test-audience",
             claims: claims,
             expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: _factory.SigningCredentials

@@ -76,6 +76,93 @@ public class FileValidationServiceTests
         Assert.Contains(result.Errors, e => e.Contains("size", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData("image/png", new byte[] { 0x89, 0x50, 0x4E, 0x47 }, "image/png")]
+    [InlineData("image/jpeg", new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }, "image/jpeg")]
+    [InlineData("image/gif", new byte[] { 0x47, 0x49, 0x46, 0x38 }, "image/gif")]
+    [InlineData("application/pdf", new byte[] { 0x25, 0x50, 0x44, 0x46 }, "application/pdf")]
+    [InlineData("application/zip", new byte[] { 0x50, 0x4B, 0x03, 0x04 }, "application/zip")]
+    public async Task ValidateFileAsync_DetectsCorrectContentType(string declaredType, byte[] signature, string expectedDetectedType)
+    {
+        // Arrange
+        var mockClamClient = new Mock<IClamClient>();
+        var cleanScanResult = new ClamScanResult("stream: OK");
+        mockClamClient
+            .Setup(x => x.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cleanScanResult);
+
+        var service = new FileValidationService(mockClamClient.Object);
+
+        // Create file with proper signature
+        var fileContent = new byte[1024];
+        Array.Copy(signature, fileContent, signature.Length);
+        using var stream = new MemoryStream(fileContent);
+
+        // Act
+        var result = await service.ValidateFileAsync(stream, "test.file", declaredType, fileContent.Length);
+
+        // Assert
+        Assert.True(result.IsValid);
+        Assert.Equal(expectedDetectedType, result.DetectedContentType);
+    }
+
+    [Fact]
+    public async Task ValidateFileAsync_ScanFailure_ReturnsError()
+    {
+        // Arrange
+        var mockClamClient = new Mock<IClamClient>();
+        mockClamClient
+            .Setup(x => x.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("ClamAV connection failed"));
+
+        var service = new FileValidationService(mockClamClient.Object);
+        var fileContent = System.Text.Encoding.UTF8.GetBytes("Test content");
+        using var stream = new MemoryStream(fileContent);
+
+        // Act
+        var result = await service.ValidateFileAsync(stream, "test.txt", "text/plain", fileContent.Length);
+
+        // Assert
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("Malware scan failed"));
+    }
+
+    [Fact]
+    public async Task ValidateFileAsync_EmptyFile_PassesValidation()
+    {
+        // Arrange
+        var mockClamClient = new Mock<IClamClient>();
+        var cleanScanResult = new ClamScanResult("stream: OK");
+        mockClamClient
+            .Setup(x => x.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cleanScanResult);
+
+        var service = new FileValidationService(mockClamClient.Object);
+        using var stream = new MemoryStream();
+
+        // Act
+        var result = await service.ValidateFileAsync(stream, "empty.txt", "text/plain", 0);
+
+        // Assert
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public async Task ValidateFileAsync_DisallowedContentType_ReturnsError()
+    {
+        // Arrange
+        var mockClamClient = new Mock<IClamClient>();
+        var service = new FileValidationService(mockClamClient.Object);
+        using var stream = new MemoryStream();
+
+        // Act
+        var result = await service.ValidateFileAsync(stream, "script.js", "application/javascript", 100);
+
+        // Assert
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("not allowed"));
+    }
+
     [Fact]
     public async Task ValidateFileAsync_MalwareDetected_ReturnsError()
     {

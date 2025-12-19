@@ -1,247 +1,189 @@
-using System.Security.Cryptography;
-using System.Text;
-using Maliev.UploadService.Api.Data;
 using Maliev.UploadService.Api.Services;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.EntityFrameworkCore;
+using Maliev.UploadService.Data;
+using Maliev.UploadService.Data.Entities;
+using Maliev.UploadService.Tests.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.IdentityModel.Tokens;
 using Moq;
-using Testcontainers.PostgreSql;
-using Testcontainers.RabbitMq;
-using Testcontainers.Redis;
+using nClam;
 
 namespace Maliev.UploadService.Tests.Fixtures;
 
-public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncLifetime
+public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, UploadDbContext>
 {
-    private readonly PostgreSqlContainer _postgresContainer = new PostgreSqlBuilder()
-        .WithImage("postgres:17")
-        .WithDatabase("uploadservice_test")
-        .WithUsername("postgres")
-        .WithPassword("postgres")
-        .Build();
-
-    private readonly RedisContainer _redisContainer = new RedisBuilder()
-        .WithImage("redis:7-alpine")
-        .Build();
-
-    private readonly RabbitMqContainer _rabbitMqContainer = new RabbitMqBuilder()
-        .WithImage("rabbitmq:3-management-alpine")
-        .Build();
-
-    private RSA? _rsa;
-    private RsaSecurityKey? _securityKey;
-
-    public string PostgresConnectionString => _postgresContainer.GetConnectionString();
-    public string RedisConnectionString => _redisContainer.GetConnectionString();
-    public string RabbitMqConnectionString => _rabbitMqContainer.GetConnectionString();
-    public RsaSecurityKey SecurityKey => _securityKey ?? throw new InvalidOperationException("Factory not initialized");
-    public SigningCredentials SigningCredentials => new(SecurityKey, SecurityAlgorithms.RsaSha256);
-
-    public async Task InitializeAsync()
+    protected override void ConfigureAdditionalServices(IServiceCollection services)
     {
-        // Generate RSA key pair for JWT testing
-        _rsa = RSA.Create(2048);
-        _securityKey = new RsaSecurityKey(_rsa);
+        base.ConfigureAdditionalServices(services);
 
-        // Start containers in parallel
-        await Task.WhenAll(
-            _postgresContainer.StartAsync(),
-            _redisContainer.StartAsync(),
-            _rabbitMqContainer.StartAsync()
-        );
-    }
-
-    public new async Task DisposeAsync()
-    {
-        _rsa?.Dispose();
-        await Task.WhenAll(
-            _postgresContainer.DisposeAsync().AsTask(),
-            _redisContainer.DisposeAsync().AsTask(),
-            _rabbitMqContainer.DisposeAsync().AsTask()
-        );
-        await base.DisposeAsync();
-    }
-
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        // Set test connection strings in configuration before services are built
-        builder.UseSetting("ConnectionStrings:UploadServiceDbContext", PostgresConnectionString);
-        builder.UseSetting("ConnectionStrings:redis", RedisConnectionString);
-        // Use full RabbitMQ URI for testcontainer which includes random port
-        builder.UseSetting("ConnectionStrings:rabbitmq", RabbitMqConnectionString);
-        builder.UseEnvironment("Testing");
-
-        builder.ConfigureTestServices(services =>
+        // Replace ClamAV client with mock implementation for tests
+        // Remove the real ClamClient registration
+        var clamClientDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IClamClient));
+        if (clamClientDescriptor != null)
         {
-            // Replace database connection
-            services.RemoveAll<DbContextOptions<UploadServiceDbContext>>();
-            services.AddDbContext<UploadServiceDbContext>(options =>
-                options.UseNpgsql(PostgresConnectionString));
+            services.Remove(clamClientDescriptor);
+        }
 
-            // Replace Redis connection
-            services.RemoveAll<Microsoft.Extensions.Caching.StackExchangeRedis.RedisCacheOptions>();
-            services.AddStackExchangeRedisCache(options =>
+        // Register mock ClamClient that returns clean scan results
+        var mockClamClient = new Mock<IClamClient>();
+        mockClamClient
+            .Setup(m => m.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ClamScanResult("stream: OK"));
+        mockClamClient
+            .Setup(m => m.SendAndScanFileAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ClamScanResult("stream: OK"));
+        mockClamClient
+            .Setup(m => m.PingAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        services.AddSingleton(mockClamClient.Object);
+
+        // Replace Google Cloud Storage client and IStorageService with mock implementations
+        // Remove the real StorageClient and IStorageService registrations
+        var storageClientDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(Google.Cloud.Storage.V1.StorageClient));
+        if (storageClientDescriptor != null)
+        {
+            services.Remove(storageClientDescriptor);
+        }
+
+        var storageServiceDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IStorageService));
+        if (storageServiceDescriptor != null)
+        {
+            services.Remove(storageServiceDescriptor);
+        }
+
+        // Register mock IStorageService that simulates successful uploads
+        var mockStorageService = new Mock<IStorageService>();
+        mockStorageService
+            .Setup(m => m.UploadFileAsync(
+                It.IsAny<Stream>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Stream stream, string path, string contentType, bool overwrite, CancellationToken ct) =>
             {
-                options.Configuration = RedisConnectionString;
-            });
+                // Read the stream to get the file size
+                var position = stream.Position;
+                stream.Seek(0, SeekOrigin.End);
+                var fileSize = stream.Position;
+                stream.Position = position;
 
-            // Replace GCS StorageClient with mock for testing
-            services.RemoveAll<Google.Cloud.Storage.V1.StorageClient>();
-            services.RemoveAll<IStorageService>();
-            services.AddScoped<IStorageService>(sp =>
-            {
-                var mockService = new Mock<IStorageService>();
-
-                // Setup default behavior for upload
-                mockService
-                    .Setup(x => x.UploadFileAsync(
-                        It.IsAny<Stream>(),
-                        It.IsAny<string>(),
-                        It.IsAny<string>(),
-                        It.IsAny<bool>(),
-                        It.IsAny<CancellationToken>()))
-                    .ReturnsAsync((Stream stream, string path, string contentType, bool overwrite, CancellationToken ct) =>
-                        new StorageUploadResult
-                        {
-                            StoragePath = path,
-                            ContentType = contentType,
-                            SizeBytes = stream.Length,
-                            UploadedAt = DateTime.UtcNow
-                        });
-
-                // Setup default behavior for file exists
-                mockService
-                    .Setup(x => x.FileExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                    .ReturnsAsync(false);
-
-                // Setup default behavior for delete
-                mockService
-                    .Setup(x => x.DeleteFileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                    .Returns(Task.CompletedTask);
-
-                // Setup default behavior for generate signed URL
-                mockService
-                    .Setup(x => x.GenerateSignedUrlAsync(
-                        It.IsAny<string>(),
-                        It.IsAny<TimeSpan>(),
-                        It.IsAny<CancellationToken>()))
-                    .ReturnsAsync((string path, TimeSpan expiration, CancellationToken ct) =>
-                        $"https://storage.googleapis.com/maliev-uploads/{path}?signed=test");
-
-                // Setup default behavior for get file metadata
-                mockService
-                    .Setup(x => x.GetFileMetadataAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-                    .ReturnsAsync((string path, CancellationToken ct) =>
-                        new StorageFileMetadata
-                        {
-                            Name = path,
-                            ContentType = "text/plain",
-                            SizeBytes = 1024,
-                            CreatedAt = DateTime.UtcNow,
-                            ETag = "test-etag"
-                        });
-
-                // Setup default behavior for initiate resumable upload
-                mockService
-                    .Setup(x => x.InitiateResumableUploadAsync(
-                        It.IsAny<string>(),
-                        It.IsAny<string>(),
-                        It.IsAny<long>(),
-                        It.IsAny<CancellationToken>()))
-                    .ReturnsAsync((string path, string contentType, long totalSize, CancellationToken ct) =>
-                        new ResumableUploadSession
-                        {
-                            SessionUri = $"https://storage.googleapis.com/upload/storage/v1/b/maliev-uploads/o?uploadType=resumable&upload_id=test-{Guid.NewGuid()}",
-                            StoragePath = path,
-                            ExpiresAt = DateTime.UtcNow.AddHours(1)
-                        });
-
-                // Setup default behavior for resume upload
-                mockService
-                    .Setup(x => x.ResumeUploadAsync(
-                        It.IsAny<string>(),
-                        It.IsAny<Stream>(),
-                        It.IsAny<long>(),
-                        It.IsAny<long>(),
-                        It.IsAny<long>(),
-                        It.IsAny<CancellationToken>()))
-                    .ReturnsAsync((string sessionUri, Stream chunk, long startByte, long endByte, long totalSize, CancellationToken ct) =>
-                        new ResumableUploadProgress
-                        {
-                            BytesReceived = endByte + 1,
-                            TotalSize = totalSize,
-                            IsComplete = endByte + 1 >= totalSize,
-                            StoragePath = endByte + 1 >= totalSize ? "test-uploads/file.txt" : null
-                        });
-
-                return mockService.Object;
-            });
-
-            // Replace ClamAV client with mock for testing
-            services.RemoveAll<nClam.IClamClient>();
-            services.AddSingleton<nClam.IClamClient>(sp =>
-            {
-                var mockClam = new Mock<nClam.IClamClient>();
-
-                // Setup default behavior - return clean scan result
-                mockClam
-                    .Setup(x => x.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
-                    .ReturnsAsync(new nClam.ClamScanResult("stream: OK"));
-
-                return mockClam.Object;
-            });
-
-            // Configure JWT authentication with test RSA key
-            services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
-            {
-                options.TokenValidationParameters = new TokenValidationParameters
+                return new StorageUploadResult
                 {
-                    ValidateIssuer = true,
-                    ValidateAudience = true,
-                    ValidateLifetime = true,
-                    ValidateIssuerSigningKey = true,
-                    ValidIssuer = "https://test.maliev.com",
-                    ValidAudience = "uploadservice",
-                    IssuerSigningKey = _securityKey
+                    StoragePath = path,
+                    ContentType = contentType,
+                    SizeBytes = fileSize,
+                    UploadedAt = DateTime.UtcNow
                 };
             });
 
-            // Apply migrations and seed test data
-            var sp = services.BuildServiceProvider();
-            using var scope = sp.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<UploadServiceDbContext>();
-            context.Database.Migrate();
+        mockStorageService
+            .Setup(m => m.FileExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
-            // Seed test authorization policies
-            var testServices = new[] { "test-service", "service-a", "service-b", "pagination-service", "other-service" };
-            foreach (var serviceId in testServices)
-            {
-                if (!context.ServiceAuthorizationPolicies.Any(p => p.ServiceId == serviceId))
+        mockStorageService
+            .Setup(m => m.GetFileMetadataAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((StorageFileMetadata?)null);
+
+        mockStorageService
+            .Setup(m => m.InitiateResumableUploadAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string path, string contentType, long totalSize, CancellationToken ct) =>
+                new ResumableUploadSession
                 {
-                    context.ServiceAuthorizationPolicies.Add(new Api.Models.Entities.ServiceAuthorizationPolicy
-                    {
-                        PolicyId = Guid.NewGuid().ToString(),
-                        ServiceId = serviceId,
-                        ServiceName = $"{serviceId} Service",
-                        AllowedPathPrefixes = new List<string> { $"{serviceId}/" },
-                        AllowedContentTypes = new List<string> { "text/plain", "application/json", "image/png", "application/pdf", "image/jpeg" },
-                        MaxFileSizeBytes = 100 * 1024 * 1024, // 100MB
-                        StorageQuotaBytes = 1024L * 1024 * 1024, // 1GB
-                        AllowOverwrite = true,
-                        AllowResumableUpload = true,
-                        IsActive = true,
-                        CreatedAt = DateTime.UtcNow,
-                        UpdatedAt = DateTime.UtcNow
-                    });
-                }
+                    SessionUri = $"https://storage.googleapis.com/upload/mock/{Guid.NewGuid()}",
+                    StoragePath = path,
+                    ExpiresAt = DateTime.UtcNow.AddHours(24)
+                });
+
+        mockStorageService
+            .Setup(m => m.GenerateSignedUrlAsync(
+                It.IsAny<string>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string path, TimeSpan expiration, CancellationToken ct) =>
+                $"https://storage.googleapis.com/maliev-uploads/{path}?X-Goog-Signature=mock-signature&X-Goog-Expires={expiration.TotalSeconds}");
+
+        mockStorageService
+            .Setup(m => m.ResumeUploadAsync(
+                It.IsAny<string>(),
+                It.IsAny<Stream>(),
+                It.IsAny<long>(),
+                It.IsAny<long>(),
+                It.IsAny<long>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string sessionUri, Stream chunk, long startByte, long endByte, long totalSize, CancellationToken ct) =>
+            {
+                var bytesReceived = endByte + 1; // endByte is 0-indexed
+                return new ResumableUploadProgress
+                {
+                    BytesReceived = bytesReceived,
+                    TotalSize = totalSize,
+                    IsComplete = bytesReceived >= totalSize,
+                    StoragePath = bytesReceived >= totalSize ? "mock-path/file.bin" : null
+                };
+            });
+
+        services.AddScoped(_ => mockStorageService.Object);
+    }
+
+    protected override async Task SeedTestDataAsync()
+    {
+        // Seed authorization policies for test services
+        await using var context = CreateDbContext();
+
+        var policies = new[]
+        {
+            new ServiceAuthorizationPolicy
+            {
+                PolicyId = Guid.NewGuid().ToString(),
+                ServiceId = "test-service",
+                ServiceName = "Test Service",
+                AllowedPathPrefixes = new List<string> { "test-service/" },
+                AllowedContentTypes = new List<string> { "*/*" }, // Allow all content types for tests
+                MaxFileSizeBytes = 1024L * 1024L * 1024L, // 1GB
+                StorageQuotaBytes = 10L * 1024L * 1024L * 1024L, // 10GB
+                AllowOverwrite = true,
+                AllowResumableUpload = true,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new ServiceAuthorizationPolicy
+            {
+                PolicyId = Guid.NewGuid().ToString(),
+                ServiceId = "service-a",
+                ServiceName = "Service A",
+                AllowedPathPrefixes = new List<string> { "service-a/" },
+                AllowedContentTypes = new List<string> { "*/*" },
+                MaxFileSizeBytes = 1024L * 1024L * 1024L,
+                StorageQuotaBytes = 10L * 1024L * 1024L * 1024L,
+                AllowOverwrite = true,
+                AllowResumableUpload = true,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new ServiceAuthorizationPolicy
+            {
+                PolicyId = Guid.NewGuid().ToString(),
+                ServiceId = "service-b",
+                ServiceName = "Service B",
+                AllowedPathPrefixes = new List<string> { "service-b/" },
+                AllowedContentTypes = new List<string> { "*/*" },
+                MaxFileSizeBytes = 1024L * 1024L * 1024L,
+                StorageQuotaBytes = 10L * 1024L * 1024L * 1024L,
+                AllowOverwrite = true,
+                AllowResumableUpload = true,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             }
-            context.SaveChanges();
-        });
+        };
+
+        context.ServiceAuthorizationPolicies.AddRange(policies);
+        await context.SaveChangesAsync();
     }
 }

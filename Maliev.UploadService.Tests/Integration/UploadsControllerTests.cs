@@ -11,7 +11,8 @@ using Xunit;
 
 namespace Maliev.UploadService.Tests.Integration;
 
-public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, IAsyncLifetime
+[Collection("Database")]
+public class UploadsControllerTests : IAsyncLifetime
 {
     private readonly TestWebApplicationFactory _factory;
     private HttpClient _client = null!;
@@ -48,7 +49,7 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         content.Add(new StringContent("test-service"), "ServiceName");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/uploads", content);
+        var response = await _client.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         if (response.StatusCode != HttpStatusCode.OK)
@@ -80,7 +81,7 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         content.Add(new StringContent("test-service"), "ServiceName");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/uploads", content);
+        var response = await _client.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -101,7 +102,7 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         content.Add(new StringContent("test-service"), "ServiceName");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/uploads", content);
+        var response = await _client.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -121,7 +122,7 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         content.Add(new StringContent("test-service/uploads/test.txt"), "Path");
 
         // Act
-        var response = await clientWithoutAuth.PostAsync("/api/v1/uploads", content);
+        var response = await clientWithoutAuth.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -138,8 +139,8 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         };
 
         var token = new JwtSecurityToken(
-            issuer: "https://test.maliev.com",
-            audience: audience,
+            issuer: "test-issuer",  // Match factory expectations
+            audience: "test-audience",  // Match factory expectations
             claims: claims,
             expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: _factory.SigningCredentials
@@ -162,7 +163,7 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         content.Add(new StringContent("test-service"), "ServiceName");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/uploads", content);
+        var response = await _client.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -187,9 +188,9 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         content1.Add(fileContent1, "File", "test.txt");
         content1.Add(new StringContent("test-service/collision/test.txt"), "Path");
         content1.Add(new StringContent("test-service"), "ServiceName");
-        content1.Add(new StringContent("false"), "AllowOverwrite"); // Explicitly disable overwrite
+        content1.Add(new StringContent("false"), "Overwrite"); // Explicitly disable overwrite
 
-        var response1 = await _client.PostAsync("/api/v1/uploads", content1);
+        var response1 = await _client.PostAsync("/upload/v1/uploads", content1);
         Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
 
         // Arrange - Second upload to same path
@@ -199,10 +200,10 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         content2.Add(fileContent2, "File", "test.txt");
         content2.Add(new StringContent("test-service/collision/test.txt"), "Path");
         content2.Add(new StringContent("test-service"), "ServiceName");
-        content2.Add(new StringContent("false"), "AllowOverwrite");
+        content2.Add(new StringContent("false"), "Overwrite");
 
         // Act
-        var response2 = await _client.PostAsync("/api/v1/uploads", content2);
+        var response2 = await _client.PostAsync("/upload/v1/uploads", content2);
 
         // Assert
         Assert.Equal(HttpStatusCode.Conflict, response2.StatusCode);
@@ -227,7 +228,7 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         content.Add(new StringContent("test-service"), "ServiceName");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/uploads", content);
+        var response = await _client.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -252,7 +253,7 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         content.Add(new StringContent("test-service"), "ServiceName");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/uploads", content);
+        var response = await _client.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -276,7 +277,7 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync("/api/v1/uploads/resumable", request);
+        var response = await _client.PostAsJsonAsync("/upload/v1/uploads/resumable", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -296,6 +297,14 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
     [Fact]
     public async Task ResumeUpload_WithValidSession_UploadsChunk()
     {
+        // Create a client with redirect handling disabled for this test
+        // (308 is not a redirect in resumable upload protocol)
+        var nonRedirectClient = _factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+        nonRedirectClient.DefaultRequestHeaders.Authorization = _client.DefaultRequestHeaders.Authorization;
+
         // Arrange - First initiate a resumable upload
         var initiateRequest = new
         {
@@ -305,11 +314,13 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
             TotalSize = 10 * 1024 * 1024 // 10MB
         };
 
-        var initiateResponse = await _client.PostAsJsonAsync("/api/v1/uploads/resumable", initiateRequest);
+        var initiateResponse = await nonRedirectClient.PostAsJsonAsync("/upload/v1/uploads/resumable", initiateRequest);
         Assert.Equal(HttpStatusCode.OK, initiateResponse.StatusCode);
 
-        var initiateResult = await initiateResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
-        var uploadId = initiateResult.GetProperty("uploadId").GetString();
+        var initiateResult = await initiateResponse.Content.ReadFromJsonAsync<InitiateResumableUploadResponse>();
+        Assert.NotNull(initiateResult);
+        Assert.NotNull(initiateResult.UploadId);
+        var uploadId = initiateResult.UploadId;
 
         // Prepare chunk data (1MB)
         var chunkSize = 1024 * 1024;
@@ -321,7 +332,7 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
         chunkContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
         chunkContent.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(0, chunkSize - 1, 10 * 1024 * 1024);
 
-        var resumeResponse = await _client.PutAsync($"/api/v1/uploads/resumable/{uploadId}", chunkContent);
+        var resumeResponse = await nonRedirectClient.PutAsync($"/upload/v1/uploads/resumable/{uploadId}", chunkContent);
 
         // Assert
         // Should return 200 OK for completed or 308 Resume Incomplete for partial upload
@@ -330,5 +341,137 @@ public class UploadsControllerTests : IClassFixture<TestWebApplicationFactory>, 
             resumeResponse.StatusCode == (HttpStatusCode)308,
             $"Expected OK or 308, got {resumeResponse.StatusCode}"
         );
+    }
+
+    [Fact]
+    public async Task UploadFile_WithOverwriteEnabled_ReplacesExistingFile()
+    {
+        // Arrange - First upload
+        var content1 = new MultipartFormDataContent();
+        var fileContent1 = new ByteArrayContent(Encoding.UTF8.GetBytes("First version"));
+        fileContent1.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        content1.Add(fileContent1, "File", "test.txt");
+        content1.Add(new StringContent("test-service/overwrite/test.txt"), "Path");
+        content1.Add(new StringContent("test-service"), "ServiceName");
+        content1.Add(new StringContent("false"), "Overwrite");
+
+        var response1 = await _client.PostAsync("/upload/v1/uploads", content1);
+        Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
+        var result1 = await response1.Content.ReadFromJsonAsync<UploadResponse>();
+        var firstUploadId = result1!.UploadId;
+
+        // Arrange - Second upload with overwrite enabled
+        var content2 = new MultipartFormDataContent();
+        var fileContent2 = new ByteArrayContent(Encoding.UTF8.GetBytes("Second version - updated"));
+        fileContent2.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        content2.Add(fileContent2, "File", "test.txt");
+        content2.Add(new StringContent("test-service/overwrite/test.txt"), "Path");
+        content2.Add(new StringContent("test-service"), "ServiceName");
+        content2.Add(new StringContent("true"), "Overwrite"); // Enable overwrite
+
+        // Act
+        var response2 = await _client.PostAsync("/upload/v1/uploads", content2);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
+        var result2 = await response2.Content.ReadFromJsonAsync<UploadResponse>();
+        Assert.NotNull(result2);
+        Assert.NotEqual(firstUploadId, result2.UploadId); // Different upload ID
+        Assert.Equal("test-service/overwrite/test.txt", result2.StoragePath);
+    }
+
+    [Fact]
+    public async Task ResumeUpload_WithMissingContentRangeHeader_ReturnsBadRequest()
+    {
+        var nonRedirectClient = _factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+        nonRedirectClient.DefaultRequestHeaders.Authorization = _client.DefaultRequestHeaders.Authorization;
+
+        // Arrange - Create a resumable upload first
+        var initiateRequest = new
+        {
+            Path = "test-service/resumable/invalid-range.bin",
+            ServiceName = "test-service",
+            ContentType = "application/octet-stream",
+            TotalSize = 10 * 1024 * 1024
+        };
+
+        var initiateResponse = await nonRedirectClient.PostAsJsonAsync("/upload/v1/uploads/resumable", initiateRequest);
+        var initiateResult = await initiateResponse.Content.ReadFromJsonAsync<InitiateResumableUploadResponse>();
+        var uploadId = initiateResult!.UploadId;
+
+        // Act - Try to resume without Content-Range header
+        var chunkData = new byte[1024];
+        var chunkContent = new ByteArrayContent(chunkData);
+        chunkContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        // Deliberately NOT setting Content-Range header
+
+        var resumeResponse = await nonRedirectClient.PutAsync($"/upload/v1/uploads/resumable/{uploadId}", chunkContent);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, resumeResponse.StatusCode);
+        var errorMessage = await resumeResponse.Content.ReadAsStringAsync();
+        Assert.Contains("Content-Range", errorMessage);
+    }
+
+    [Fact]
+    public async Task ResumeUpload_WithNonExistentUploadId_ReturnsNotFound()
+    {
+        var nonRedirectClient = _factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+        nonRedirectClient.DefaultRequestHeaders.Authorization = _client.DefaultRequestHeaders.Authorization;
+
+        // Act - Try to resume non-existent upload
+        var chunkData = new byte[1024];
+        var chunkContent = new ByteArrayContent(chunkData);
+        chunkContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        chunkContent.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(0, 1023, 10 * 1024 * 1024);
+
+        var fakeUploadId = Guid.NewGuid().ToString();
+        var resumeResponse = await nonRedirectClient.PutAsync($"/upload/v1/uploads/resumable/{fakeUploadId}", chunkContent);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NotFound, resumeResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task UploadFile_WithUnauthorizedPath_ReturnsForbidden()
+    {
+        // Arrange - Try to upload to a path the service doesn't have access to
+        var content = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes("Unauthorized content"));
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+        content.Add(fileContent, "File", "test.txt");
+        content.Add(new StringContent("other-service/uploads/test.txt"), "Path"); // Different service prefix
+        content.Add(new StringContent("test-service"), "ServiceName");
+
+        // Act
+        var response = await _client.PostAsync("/upload/v1/uploads", content);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task InitiateResumableUpload_WithUnauthorizedPath_ReturnsForbidden()
+    {
+        // Arrange
+        var request = new
+        {
+            Path = "other-service/resumable/unauthorized.bin",
+            ServiceName = "test-service",
+            ContentType = "application/octet-stream",
+            TotalSize = 100 * 1024 * 1024
+        };
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/upload/v1/uploads/resumable", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 }

@@ -4,8 +4,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
-using Maliev.UploadService.Api.Data;
-using Maliev.UploadService.Api.Models.Entities;
+using Maliev.UploadService.Data;
+using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Tests.Fixtures;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +18,8 @@ namespace Maliev.UploadService.Tests.Integration;
 /// <summary>
 /// T126-T128: Integration tests for lifecycle management and retention policies
 /// </summary>
-public class LifecycleManagementTests : IClassFixture<TestWebApplicationFactory>, IAsyncLifetime
+[Collection("Database")]
+public class LifecycleManagementTests : IAsyncLifetime
 {
     private readonly TestWebApplicationFactory _factory;
     private HttpClient _client = null!;
@@ -38,7 +39,7 @@ public class LifecycleManagementTests : IClassFixture<TestWebApplicationFactory>
 
         // Create a test retention policy
         using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<UploadServiceDbContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
 
         var retentionPolicy = new RetentionPolicy
         {
@@ -84,7 +85,7 @@ public class LifecycleManagementTests : IClassFixture<TestWebApplicationFactory>
         content.Add(new StringContent(_retentionPolicyId), "RetentionPolicyId");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/uploads", content);
+        var response = await _client.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -94,7 +95,7 @@ public class LifecycleManagementTests : IClassFixture<TestWebApplicationFactory>
 
         // Verify file metadata has retention policy applied
         using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<UploadServiceDbContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
         var fileMetadata = await dbContext.FileMetadata
             .FirstOrDefaultAsync(f => f.UploadId == result.UploadId);
 
@@ -113,7 +114,7 @@ public class LifecycleManagementTests : IClassFixture<TestWebApplicationFactory>
     {
         // Arrange - Create indefinite retention policy
         using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<UploadServiceDbContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
 
         var indefinitePolicy = new RetentionPolicy
         {
@@ -139,7 +140,7 @@ public class LifecycleManagementTests : IClassFixture<TestWebApplicationFactory>
         content.Add(new StringContent(indefinitePolicy.PolicyId), "RetentionPolicyId");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/uploads", content);
+        var response = await _client.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -172,7 +173,7 @@ public class LifecycleManagementTests : IClassFixture<TestWebApplicationFactory>
         content.Add(new StringContent(_retentionPolicyId), "RetentionPolicyId");
 
         // Act
-        var response = await _client.PostAsync("/api/v1/uploads", content);
+        var response = await _client.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -182,7 +183,7 @@ public class LifecycleManagementTests : IClassFixture<TestWebApplicationFactory>
 
         // Verify retention policy has transitions
         using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<UploadServiceDbContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
         var policy = await dbContext.RetentionPolicies.FindAsync(_retentionPolicyId);
 
         Assert.NotNull(policy);
@@ -205,8 +206,8 @@ public class LifecycleManagementTests : IClassFixture<TestWebApplicationFactory>
         };
 
         var token = new JwtSecurityToken(
-            issuer: "https://test.maliev.com",
-            audience: audience,
+            issuer: "test-issuer",
+            audience: "test-audience",
             claims: claims,
             expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: _factory.SigningCredentials

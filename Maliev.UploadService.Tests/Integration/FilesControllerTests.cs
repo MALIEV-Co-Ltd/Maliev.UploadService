@@ -11,7 +11,8 @@ using Xunit;
 
 namespace Maliev.UploadService.Tests.Integration;
 
-public class FilesControllerTests : IClassFixture<TestWebApplicationFactory>, IAsyncLifetime
+[Collection("Database")]
+public class FilesControllerTests : IAsyncLifetime
 {
     private readonly TestWebApplicationFactory _factory;
     private HttpClient _client = null!;
@@ -37,22 +38,40 @@ public class FilesControllerTests : IClassFixture<TestWebApplicationFactory>, IA
         content.Add(new StringContent("test-service/files/test-retrieval.txt"), "Path");
         content.Add(new StringContent("test-service"), "ServiceName");
 
-        var uploadResponse = await _client.PostAsync("/api/v1/uploads", content);
+        var uploadResponse = await _client.PostAsync("/upload/v1/uploads", content);
+        Assert.Equal(System.Net.HttpStatusCode.OK, uploadResponse.StatusCode);
+
         var uploadResult = await uploadResponse.Content.ReadFromJsonAsync<UploadResponse>();
+        Assert.NotNull(uploadResult);
         _uploadId = uploadResult!.UploadId;
+
+        // Verify the upload has the correct storage path
+        Assert.NotEmpty(uploadResult.StoragePath);
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        // Clean up the uploaded file
+        if (_uploadId != null && _client != null)
+        {
+            try
+            {
+                await _client.DeleteAsync($"/upload/v1/files/{_uploadId}");
+            }
+            catch
+            {
+                // Ignore errors during cleanup
+            }
+        }
+
         _client?.Dispose();
-        return Task.CompletedTask;
     }
 
     [Fact]
     public async Task GetFileMetadata_ValidUploadId_ReturnsMetadata()
     {
         // Act
-        var response = await _client.GetAsync($"/api/v1/files/{_uploadId}");
+        var response = await _client.GetAsync($"/upload/v1/files/{_uploadId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -69,7 +88,7 @@ public class FilesControllerTests : IClassFixture<TestWebApplicationFactory>, IA
     public async Task GetFileMetadata_NonExistentUploadId_ReturnsNotFound()
     {
         // Act
-        var response = await _client.GetAsync($"/api/v1/files/{Guid.NewGuid()}");
+        var response = await _client.GetAsync($"/upload/v1/files/{Guid.NewGuid()}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -85,7 +104,7 @@ public class FilesControllerTests : IClassFixture<TestWebApplicationFactory>, IA
         };
 
         // Act
-        var response = await _client.PostAsJsonAsync($"/api/v1/files/{_uploadId}/signed-url", request);
+        var response = await _client.PostAsJsonAsync($"/upload/v1/files/{_uploadId}/signed-url", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -100,7 +119,7 @@ public class FilesControllerTests : IClassFixture<TestWebApplicationFactory>, IA
     public async Task QueryFiles_ByPathPrefix_ReturnsMatchingFiles()
     {
         // Act
-        var response = await _client.GetAsync("/api/v1/files?pathPrefix=test-service/files/");
+        var response = await _client.GetAsync("/upload/v1/files?pathPrefix=test-service/files/");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -122,18 +141,18 @@ public class FilesControllerTests : IClassFixture<TestWebApplicationFactory>, IA
         content.Add(new StringContent("test-service/files/delete-me.txt"), "Path");
         content.Add(new StringContent("test-service"), "ServiceName");
 
-        var uploadResponse = await _client.PostAsync("/api/v1/uploads", content);
+        var uploadResponse = await _client.PostAsync("/upload/v1/uploads", content);
         var uploadResult = await uploadResponse.Content.ReadFromJsonAsync<UploadResponse>();
         var uploadIdToDelete = uploadResult!.UploadId;
 
         // Act
-        var response = await _client.DeleteAsync($"/api/v1/files/{uploadIdToDelete}");
+        var response = await _client.DeleteAsync($"/upload/v1/files/{uploadIdToDelete}");
 
         // Assert
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
 
         // Verify file is gone
-        var getResponse = await _client.GetAsync($"/api/v1/files/{uploadIdToDelete}");
+        var getResponse = await _client.GetAsync($"/upload/v1/files/{uploadIdToDelete}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
     }
 
@@ -148,8 +167,8 @@ public class FilesControllerTests : IClassFixture<TestWebApplicationFactory>, IA
         };
 
         var token = new JwtSecurityToken(
-            issuer: "https://test.maliev.com",
-            audience: audience,
+            issuer: "test-issuer",
+            audience: "test-audience",
             claims: claims,
             expires: DateTime.UtcNow.AddHours(1),
             signingCredentials: _factory.SigningCredentials

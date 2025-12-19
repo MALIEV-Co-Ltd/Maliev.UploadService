@@ -26,6 +26,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Maliev.UploadService.Api\Maliev.UploadService.Api.csproj" />
+    <ProjectReference Include="..\Maliev.UploadService.Data\Maliev.UploadService.Data.csproj" />
+    <ProjectReference Include="..\..\Maliev.Aspire\Maliev.Aspire.ServiceDefaults\Maliev.Aspire.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

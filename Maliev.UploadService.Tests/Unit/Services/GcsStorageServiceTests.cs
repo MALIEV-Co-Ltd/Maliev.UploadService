@@ -296,4 +296,193 @@ public class GcsStorageServiceTests
                 CancellationToken.None);
         });
     }
+
+    [Fact]
+    public async Task DeleteFileAsync_ValidPath_DeletesSuccessfully()
+    {
+        // Arrange
+        var mockClient = new Mock<StorageClient>();
+        mockClient
+            .Setup(x => x.DeleteObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<DeleteObjectOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+
+        // Act
+        await service.DeleteFileAsync("test-service/uploads/test.txt");
+
+        // Assert
+        mockClient.Verify(x => x.DeleteObjectAsync(
+            "test-bucket",
+            "test-service/uploads/test.txt",
+            It.IsAny<DeleteObjectOptions>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetFileMetadataAsync_FileExists_ReturnsMetadata()
+    {
+        // Arrange
+        var mockClient = new Mock<StorageClient>();
+        var createdAt = DateTime.UtcNow.AddDays(-1);
+        mockClient
+            .Setup(x => x.GetObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<GetObjectOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Google.Apis.Storage.v1.Data.Object
+            {
+                Name = "test.txt",
+                ContentType = "text/plain",
+                Size = 1024,
+                TimeCreatedDateTimeOffset = new DateTimeOffset(createdAt),
+                ETag = "etag123"
+            });
+
+        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+
+        // Act
+        var metadata = await service.GetFileMetadataAsync("test.txt");
+
+        // Assert
+        Assert.NotNull(metadata);
+        Assert.Equal("test.txt", metadata.Name);
+        Assert.Equal("text/plain", metadata.ContentType);
+        Assert.Equal(1024, metadata.SizeBytes);
+        Assert.Equal("etag123", metadata.ETag);
+        Assert.Equal(createdAt, metadata.CreatedAt);
+    }
+
+    [Fact]
+    public async Task GetFileMetadataAsync_FileDoesNotExist_ReturnsNull()
+    {
+        // Arrange
+        var mockClient = new Mock<StorageClient>();
+        mockClient
+            .Setup(x => x.GetObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<GetObjectOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Google.GoogleApiException("GCS", "Not Found")
+            {
+                HttpStatusCode = System.Net.HttpStatusCode.NotFound
+            });
+
+        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+
+        // Act
+        var metadata = await service.GetFileMetadataAsync("nonexistent.txt");
+
+        // Assert
+        Assert.Null(metadata);
+    }
+
+    [Fact]
+    public async Task GetFileMetadataAsync_FileNotFound_WithErrorCode404_ReturnsNull()
+    {
+        // Arrange
+        var mockClient = new Mock<StorageClient>();
+        var exception = new Google.GoogleApiException("GCS", "Not Found");
+        // Simulate error code 404
+        var errorField = typeof(Google.GoogleApiException).GetProperty("Error");
+        if (errorField != null && errorField.CanWrite)
+        {
+            errorField.SetValue(exception, new Google.Apis.Requests.RequestError { Code = 404 });
+        }
+
+        mockClient
+            .Setup(x => x.GetObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<GetObjectOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(exception);
+
+        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+
+        // Act
+        var metadata = await service.GetFileMetadataAsync("nonexistent.txt");
+
+        // Assert
+        Assert.Null(metadata);
+    }
+
+    [Fact]
+    public async Task FileExistsAsync_WithErrorCode404_ReturnsFalse()
+    {
+        // Arrange
+        var mockClient = new Mock<StorageClient>();
+        var exception = new Google.GoogleApiException("GCS", "Not Found");
+        var errorField = typeof(Google.GoogleApiException).GetProperty("Error");
+        if (errorField != null && errorField.CanWrite)
+        {
+            errorField.SetValue(exception, new Google.Apis.Requests.RequestError { Code = 404 });
+        }
+
+        mockClient
+            .Setup(x => x.GetObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<GetObjectOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(exception);
+
+        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+
+        // Act
+        var exists = await service.FileExistsAsync("nonexistent.txt");
+
+        // Assert
+        Assert.False(exists);
+    }
+
+    [Fact]
+    public async Task FileExistsAsync_WithNotFoundMessage_ReturnsFalse()
+    {
+        // Arrange
+        var mockClient = new Mock<StorageClient>();
+        mockClient
+            .Setup(x => x.GetObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<GetObjectOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Google.GoogleApiException("GCS", "Resource Not Found"));
+
+        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+
+        // Act
+        var exists = await service.FileExistsAsync("nonexistent.txt");
+
+        // Assert
+        Assert.False(exists);
+    }
+
+    [Fact]
+    public async Task GetFileMetadataAsync_WithNotFoundMessage_ReturnsNull()
+    {
+        // Arrange
+        var mockClient = new Mock<StorageClient>();
+        mockClient
+            .Setup(x => x.GetObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<GetObjectOptions>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Google.GoogleApiException("GCS", "File Not Found"));
+
+        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+
+        // Act
+        var metadata = await service.GetFileMetadataAsync("nonexistent.txt");
+
+        // Assert
+        Assert.Null(metadata);
+    }
 }

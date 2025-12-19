@@ -1,4 +1,4 @@
-using Maliev.UploadService.Api.Data;
+using Maliev.UploadService.Data;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 
@@ -7,7 +7,7 @@ namespace Maliev.UploadService.Tests.Fixtures;
 public class TestDatabaseFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder()
-        .WithImage("postgres:17")
+        .WithImage("postgres:18-alpine")
         .WithDatabase("uploadservice_test")
         .WithUsername("postgres")
         .WithPassword("postgres")
@@ -25,13 +25,13 @@ public class TestDatabaseFixture : IAsyncLifetime
         await _container.DisposeAsync();
     }
 
-    public UploadServiceDbContext CreateDbContext()
+    public UploadDbContext CreateDbContext()
     {
-        var options = new DbContextOptionsBuilder<UploadServiceDbContext>()
+        var options = new DbContextOptionsBuilder<UploadDbContext>()
             .UseNpgsql(ConnectionString)
             .Options;
 
-        var context = new UploadServiceDbContext(options);
+        var context = new UploadDbContext(options);
         context.Database.Migrate();
         return context;
     }
