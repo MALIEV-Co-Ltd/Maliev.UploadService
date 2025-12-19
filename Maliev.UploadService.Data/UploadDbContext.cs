@@ -1,13 +1,14 @@
-using Maliev.UploadService.Api.Models.Entities;
+using Maliev.UploadService.Data.Entities;
 using Microsoft.EntityFrameworkCore;
+using Maliev.Aspire.ServiceDefaults.Database;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using System.Text.Json;
 
-namespace Maliev.UploadService.Api.Data;
+namespace Maliev.UploadService.Data;
 
-public class UploadServiceDbContext : DbContext
+public class UploadDbContext : DbContext
 {
-    public UploadServiceDbContext(DbContextOptions<UploadServiceDbContext> options)
+    public UploadDbContext(DbContextOptions<UploadDbContext> options)
         : base(options)
     {
     }
@@ -138,5 +139,8 @@ public class UploadServiceDbContext : DbContext
             entity.HasIndex(e => e.Status).HasDatabaseName("idx_bulk_delete_status");
             entity.HasIndex(e => e.CreatedAt).HasDatabaseName("idx_bulk_delete_created_at");
         });
+
+        // Apply PostgreSQL snake_case naming convention globally
+        SnakeCaseNamingHelper.ApplySnakeCaseNaming(modelBuilder);
     }
 }

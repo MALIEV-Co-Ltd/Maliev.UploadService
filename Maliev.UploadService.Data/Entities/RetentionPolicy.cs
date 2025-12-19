@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Maliev.UploadService.Api.Models.Entities;
+namespace Maliev.UploadService.Data.Entities;
 
 public class RetentionPolicy
 {
