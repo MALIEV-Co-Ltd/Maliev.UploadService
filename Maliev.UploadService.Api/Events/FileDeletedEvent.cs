@@ -1,7 +1,7 @@
 namespace Maliev.UploadService.Api.Events;
 
 /// <summary>
-/// T157: Event published when a file is deleted (FR-025)
+/// Event published when a file is deleted (FR-025)
 /// Routing key: maliev.uploadservice.v1.file.deleted
 /// </summary>
 public class FileDeletedEvent

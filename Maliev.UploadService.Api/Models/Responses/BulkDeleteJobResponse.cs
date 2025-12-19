@@ -1,7 +1,7 @@
 namespace Maliev.UploadService.Api.Models.Responses;
 
 /// <summary>
-/// T167: Response model for bulk delete job status (FR-033)
+/// Response model for bulk delete job status (FR-033)
 /// </summary>
 public class BulkDeleteJobResponse
 {

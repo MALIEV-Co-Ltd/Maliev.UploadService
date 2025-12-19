@@ -4,7 +4,7 @@ using Maliev.UploadService.Api.Services;
 namespace Maliev.UploadService.Api.Consumers;
 
 /// <summary>
-/// T170: MassTransit consumer for processing bulk delete jobs (FR-033)
+/// MassTransit consumer for processing bulk delete jobs (FR-033)
 /// </summary>
 public class BulkDeleteJobConsumer : IConsumer<BulkDeleteJobMessage>
 {

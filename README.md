@@ -73,11 +73,8 @@ The Upload Service is a core infrastructure microservice that abstracts Google C
    cd Maliev.UploadService
    ```
 
-2. **Start infrastructure services**:
-   ```bash
-   docker-compose up -d
-   ```
-   This starts PostgreSQL, Redis, RabbitMQ, and ClamAV.
+2. **Infrastructure dependencies**:
+   Infrastructure services (PostgreSQL, Redis, RabbitMQ, ClamAV) are automatically managed by Testcontainers during test execution. For local development, the service connects to your existing infrastructure or you can start services individually with Docker.
 
 3. **Configure environment variables**:
    Create `appsettings.Development.json`:
@@ -281,18 +278,17 @@ This service follows the [MALIEV Architecture Constitution](CLAUDE.md):
 
 **ClamAV connection fails**:
 ```bash
-# Restart ClamAV container
-docker-compose restart clamav
+# Check if ClamAV is running locally
+docker ps | grep clamav
 
-# Check ClamAV logs
-docker-compose logs clamav
+# Start ClamAV if needed
+docker run -d -p 3310:3310 clamav/clamav:latest
 ```
 
 **Database migration fails**:
 ```bash
-# Drop and recreate database
-docker-compose down -v
-docker-compose up -d postgres
+# Tests use Testcontainers which handle database lifecycle automatically
+# For local development, ensure your PostgreSQL instance is running
 dotnet ef database update --project Maliev.UploadService.Api
 ```
 

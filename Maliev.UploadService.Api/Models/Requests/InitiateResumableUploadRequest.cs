@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Maliev.UploadService.Api.Models.Requests;
 
 /// <summary>
-/// T142: Request model for initiating a resumable upload session (FR-022)
+/// Request model for initiating a resumable upload session (FR-022)
 /// </summary>
 public class InitiateResumableUploadRequest
 {

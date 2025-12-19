@@ -117,7 +117,7 @@ public class GcsStorageService : IStorageService
     }
 
     /// <summary>
-    /// T145: Initiates a resumable upload session with GCS (FR-022, FR-024)
+    /// Initiates a resumable upload session with GCS (FR-022, FR-024)
     /// </summary>
     public async Task<ResumableUploadSession> InitiateResumableUploadAsync(
         string storagePath,
@@ -146,7 +146,7 @@ public class GcsStorageService : IStorageService
     }
 
     /// <summary>
-    /// T146: Resumes an upload by sending a chunk to the GCS session URI (FR-022, FR-024)
+    /// Resumes an upload by sending a chunk to the GCS session URI (FR-022, FR-024)
     /// </summary>
     public async Task<ResumableUploadProgress> ResumeUploadAsync(
         string sessionUri,

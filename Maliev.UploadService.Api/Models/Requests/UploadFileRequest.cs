@@ -20,7 +20,7 @@ public class UploadFileRequest
     public string? Metadata { get; set; }
 
     /// <summary>
-    /// T132: Optional retention policy ID to apply to uploaded file
+    /// Optional retention policy ID to apply to uploaded file
     /// </summary>
     [MaxLength(50)]
     public string? RetentionPolicyId { get; set; }

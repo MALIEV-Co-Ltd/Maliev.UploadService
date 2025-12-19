@@ -1,20 +1,21 @@
 using Asp.Versioning;
-using Maliev.UploadService.Api.Data;
+using Maliev.UploadService.Data;
 using Maliev.UploadService.Api.Events;
 using Maliev.UploadService.Api.Extensions;
-using Maliev.UploadService.Api.Models.Entities;
+using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Maliev.UploadService.Api.Controllers.v1;
 
 [ApiController]
 [ApiVersion("1.0")]
-[Route("api/v{version:apiVersion}/uploads")]
+[Route("upload/v{version:apiVersion}/uploads")]
 [Authorize]
 public class UploadsController : ControllerBase
 {
@@ -22,7 +23,7 @@ public class UploadsController : ControllerBase
     private readonly IStorageService _storageService;
     private readonly IAuthorizationPolicyService _authorizationService;
     private readonly ILifecycleManagementService _lifecycleService;
-    private readonly UploadServiceDbContext _dbContext;
+    private readonly UploadDbContext _dbContext;
     private readonly ILogger<UploadsController> _logger;
     private readonly IPublishEndpoint _publishEndpoint;
 
@@ -31,7 +32,7 @@ public class UploadsController : ControllerBase
         IStorageService storageService,
         IAuthorizationPolicyService authorizationService,
         ILifecycleManagementService lifecycleService,
-        UploadServiceDbContext dbContext,
+        UploadDbContext dbContext,
         ILogger<UploadsController> logger,
         IPublishEndpoint publishEndpoint)
     {
@@ -98,6 +99,34 @@ public class UploadsController : ControllerBase
                     serviceName, sanitizedPath);
                 await LogUploadEventAsync(uploadId, serviceName, sanitizedPath, "Unauthorized", cancellationToken);
                 return Forbid();
+            }
+
+            // T103: Check for path collision (FR-010)
+            var existingUpload = await _dbContext.Uploads
+                .FirstOrDefaultAsync(u => u.StoragePath == sanitizedPath, cancellationToken);
+
+            if (existingUpload != null)
+            {
+                if (!request.Overwrite)
+                {
+                    _logger.LogWarning("File already exists at path {Path} and overwrite is disabled", sanitizedPath);
+                    await LogUploadEventAsync(uploadId, serviceName, sanitizedPath, "PathCollision", cancellationToken);
+                    return Conflict(new { error = $"File already exists at path '{sanitizedPath}'. Set Overwrite=true to replace it." });
+                }
+
+                // Delete existing upload and file metadata before overwriting
+                var existingFileMetadata = await _dbContext.FileMetadata
+                    .FirstOrDefaultAsync(f => f.UploadId == existingUpload.UploadId, cancellationToken);
+
+                if (existingFileMetadata != null)
+                {
+                    _dbContext.FileMetadata.Remove(existingFileMetadata);
+                }
+
+                _dbContext.Uploads.Remove(existingUpload);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+
+                _logger.LogInformation("Overwriting existing file at path {Path}", sanitizedPath);
             }
 
             // T076: File validation
@@ -270,7 +299,7 @@ public class UploadsController : ControllerBase
     }
 
     /// <summary>
-    /// T147: POST /api/v1/uploads/resumable - Initiates a resumable upload session (FR-022)
+    /// POST /api/v1/uploads/resumable - Initiates a resumable upload session (FR-022)
     /// </summary>
     [HttpPost("resumable")]
     [ProducesResponseType(typeof(InitiateResumableUploadResponse), StatusCodes.Status200OK)]
@@ -347,7 +376,7 @@ public class UploadsController : ControllerBase
     }
 
     /// <summary>
-    /// T148: PUT /api/v1/uploads/resumable/{uploadId} - Continues a resumable upload (FR-022)
+    /// PUT /api/v1/uploads/resumable/{uploadId} - Continues a resumable upload (FR-022)
     /// </summary>
     [HttpPut("resumable/{uploadId}")]
     [ProducesResponseType(typeof(ResumeUploadResponse), StatusCodes.Status200OK)]

@@ -1,4 +1,4 @@
-using Maliev.UploadService.Api.Models.Entities;
+using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Models.Responses;
 
 namespace Maliev.UploadService.Api.Extensions;

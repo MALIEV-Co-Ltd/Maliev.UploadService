@@ -1,5 +1,5 @@
-using Maliev.UploadService.Api.Data;
-using Maliev.UploadService.Api.Models.Entities;
+using Maliev.UploadService.Data;
+using Maliev.UploadService.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
@@ -8,13 +8,13 @@ namespace Maliev.UploadService.Api.Services;
 
 public class AuthorizationPolicyService : IAuthorizationPolicyService
 {
-    private readonly UploadServiceDbContext _context;
+    private readonly UploadDbContext _context;
     private readonly IDistributedCache _cache;
     private readonly ILogger<AuthorizationPolicyService> _logger;
     private readonly TimeSpan _cacheDuration;
 
     public AuthorizationPolicyService(
-        UploadServiceDbContext context,
+        UploadDbContext context,
         IDistributedCache cache,
         ILogger<AuthorizationPolicyService> logger,
         IConfiguration configuration)

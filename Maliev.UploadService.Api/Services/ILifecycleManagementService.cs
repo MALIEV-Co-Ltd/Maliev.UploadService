@@ -1,9 +1,9 @@
-using Maliev.UploadService.Api.Models.Entities;
+using Maliev.UploadService.Data.Entities;
 
 namespace Maliev.UploadService.Api.Services;
 
 /// <summary>
-/// T130: Service interface for managing file lifecycle and retention policies
+/// Service interface for managing file lifecycle and retention policies
 /// </summary>
 public interface ILifecycleManagementService
 {

@@ -3,7 +3,7 @@ using Maliev.UploadService.Api.Services;
 namespace Maliev.UploadService.Api.BackgroundServices;
 
 /// <summary>
-/// T134: Background service that periodically processes lifecycle policies
+/// Background service that periodically processes lifecycle policies
 /// Handles file expiration and storage class transitions
 /// </summary>
 public class LifecyclePolicyWorker : BackgroundService

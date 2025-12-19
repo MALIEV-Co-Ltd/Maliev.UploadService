@@ -1,20 +1,20 @@
-using Maliev.UploadService.Api.Data;
-using Maliev.UploadService.Api.Models.Entities;
+using Maliev.UploadService.Data;
+using Maliev.UploadService.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Maliev.UploadService.Api.Services;
 
 /// <summary>
-/// T169: Implementation of bulk delete service (FR-032, FR-033)
+/// Implementation of bulk delete service (FR-032, FR-033)
 /// </summary>
 public class BulkDeleteService : IBulkDeleteService
 {
-    private readonly UploadServiceDbContext _dbContext;
+    private readonly UploadDbContext _dbContext;
     private readonly IStorageService _storageService;
     private readonly ILogger<BulkDeleteService> _logger;
 
     public BulkDeleteService(
-        UploadServiceDbContext dbContext,
+        UploadDbContext dbContext,
         IStorageService storageService,
         ILogger<BulkDeleteService> logger)
     {

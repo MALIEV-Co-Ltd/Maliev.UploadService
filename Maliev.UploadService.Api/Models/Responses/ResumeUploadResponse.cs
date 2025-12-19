@@ -1,7 +1,7 @@
 namespace Maliev.UploadService.Api.Models.Responses;
 
 /// <summary>
-/// T144: Response model for resumable upload continuation (FR-022)
+/// Response model for resumable upload continuation (FR-022)
 /// </summary>
 public class ResumeUploadResponse
 {

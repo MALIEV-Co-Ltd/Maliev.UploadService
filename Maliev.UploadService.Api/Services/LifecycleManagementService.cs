@@ -1,19 +1,19 @@
-using Maliev.UploadService.Api.Data;
-using Maliev.UploadService.Api.Models.Entities;
+using Maliev.UploadService.Data;
+using Maliev.UploadService.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace Maliev.UploadService.Api.Services;
 
 /// <summary>
-/// T131, T133, T136: Service for managing file lifecycle and retention policies with GCS integration
+/// Service for managing file lifecycle and retention policies with GCS integration
 /// </summary>
 public class LifecycleManagementService : ILifecycleManagementService
 {
-    private readonly UploadServiceDbContext _context;
+    private readonly UploadDbContext _context;
     private readonly ILogger<LifecycleManagementService> _logger;
 
     public LifecycleManagementService(
-        UploadServiceDbContext context,
+        UploadDbContext context,
         ILogger<LifecycleManagementService> logger)
     {
         _context = context;
@@ -21,7 +21,7 @@ public class LifecycleManagementService : ILifecycleManagementService
     }
 
     /// <summary>
-    /// T133: Applies a retention policy to a file and calculates expiration date
+    /// Applies a retention policy to a file and calculates expiration date
     /// </summary>
     public async Task<DateTime?> ApplyRetentionPolicyAsync(
         FileMetadata fileMetadata,
@@ -56,7 +56,7 @@ public class LifecycleManagementService : ILifecycleManagementService
     }
 
     /// <summary>
-    /// T133: Gets the active retention policy for a service and path
+    /// Gets the active retention policy for a service and path
     /// </summary>
     public async Task<RetentionPolicy?> GetActiveRetentionPolicyAsync(
         string serviceId,
@@ -94,7 +94,7 @@ public class LifecycleManagementService : ILifecycleManagementService
     }
 
     /// <summary>
-    /// T136: Determines the appropriate storage class based on file age and transition rules
+    /// Determines the appropriate storage class based on file age and transition rules
     /// </summary>
     public string GetStorageClassForAge(int ageInDays, List<StorageClassTransition>? transitions)
     {
@@ -124,7 +124,7 @@ public class LifecycleManagementService : ILifecycleManagementService
     }
 
     /// <summary>
-    /// T133: Processes expired files based on retention policies
+    /// Processes expired files based on retention policies
     /// NOTE: In production, this would mark files for deletion in GCS via lifecycle rules
     /// For now, we'll mark them in the database and log for manual cleanup
     /// </summary>
@@ -164,7 +164,7 @@ public class LifecycleManagementService : ILifecycleManagementService
     }
 
     /// <summary>
-    /// T136: Updates storage classes for files based on age and transition rules
+    /// Updates storage classes for files based on age and transition rules
     /// NOTE: In production, this would update GCS object storage classes
     /// </summary>
     public async Task<int> UpdateStorageClassesAsync(CancellationToken cancellationToken = default)

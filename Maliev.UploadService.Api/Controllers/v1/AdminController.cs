@@ -10,11 +10,11 @@ using Microsoft.AspNetCore.Mvc;
 namespace Maliev.UploadService.Api.Controllers.v1;
 
 /// <summary>
-/// T171: Admin controller for bulk operations (FR-032, FR-033)
+/// Admin controller for bulk operations (FR-032, FR-033)
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
-[Route("api/v{version:apiVersion}/admin")]
+[Route("upload/v{version:apiVersion}/admin")]
 [Authorize(Roles = "Admin")] // Restrict to admin users only
 public class AdminController : ControllerBase
 {
@@ -33,7 +33,7 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// T172: POST /api/v1/admin/bulk-delete - Initiates a bulk delete job (FR-032)
+    /// POST /api/v1/admin/bulk-delete - Initiates a bulk delete job (FR-032)
     /// </summary>
     [HttpPost("bulk-delete")]
     [ProducesResponseType(typeof(BulkDeleteJobResponse), StatusCodes.Status202Accepted)]
@@ -82,7 +82,7 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
-    /// T173: GET /api/v1/admin/bulk-delete/{jobId} - Gets bulk delete job status (FR-033)
+    /// GET /api/v1/admin/bulk-delete/{jobId} - Gets bulk delete job status (FR-033)
     /// </summary>
     [HttpGet("bulk-delete/{jobId}")]
     [ProducesResponseType(typeof(BulkDeleteJobResponse), StatusCodes.Status200OK)]

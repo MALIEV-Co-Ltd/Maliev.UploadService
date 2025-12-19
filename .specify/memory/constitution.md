@@ -1,52 +1,5 @@
 # MALIEV Microservices Constitution
 
-<!--
-SYNC IMPACT REPORT
-==================
-Version Change: 1.6.0 → 1.7.0 (Amendment: Code Quality Standards & Scalar Adoption)
-Ratification Date: 2025-12-04
-Last Amendment: 2025-12-04
-
-UPDATES:
-- Added Principle XIV: Code Quality & Library Standards (NON-NEGOTIABLE)
-  - BANNED: AutoMapper, FluentValidation, FluentAssertions
-- Updated Principle II: Replaced Swagger with Scalar for API documentation
-
-TEMPLATE UPDATES REQUIRED:
-✅ constitution.md — Added Principle XIV, Updated Principle II
-🔄 All microservices — Remove banned libraries, migrate to Scalar
-🔄 All specs — plan.md must validate compliance
-
-FOLLOW-UP ITEMS:
-- Audit all services for banned libraries
-- Schedule migration tasks for non-compliant services
--->
-
-<!--
-PREVIOUS SYNC IMPACT REPORT
-===========================
-Version Change: 1.5.0 → 1.6.0 (Amendment: .NET Aspire Integration & GitHub Packages)
-Ratification Date: 2025-10-02
-Last Amendment: 2025-11-21
-
-UPDATES:
-- Added Principle XIII: .NET Aspire Integration (NON-NEGOTIABLE)
-- ServiceDefaults must be consumed as NuGet package from GitHub Packages
-- Docker builds must use BuildKit secrets for NuGet authentication
-- CI/CD must authenticate with GITOPS_PAT (not GITHUB_TOKEN) for cross-repo packages
-
-TEMPLATE UPDATES REQUIRED:
-✅ constitution.md — Added Principle XIII for Aspire integration
-🔄 All microservices — Must update to use PackageReference for ServiceDefaults
-🔄 All Dockerfiles — Must use BuildKit secrets syntax
-🔄 All CI workflows — Must pass NuGet credentials
-
-FOLLOW-UP ITEMS:
-- Update remaining 19 microservices to use GitHub Packages for ServiceDefaults
-- Verify all GITOPS_PAT secrets have read:packages scope
-- Update CI workflows to use BuildKit secret flags in docker build
--->
-
 ## Core Principles
 
 ### I. Service Autonomy (NON-NEGOTIABLE)
@@ -103,6 +56,18 @@ Each microservice must be **self-contained**:
 * Structured JSON logging with traceable user/action IDs
 * Immutable audit logs retained per policy
 * Health checks for liveness/readiness
+* **Mandatory Log Level Configuration**: `appsettings.json` MUST use the following LogLevel configuration to reduce noise:
+  ```json
+  "LogLevel": {
+    "Default": "Information",
+    "Microsoft.AspNetCore": "Warning",
+    "Microsoft.EntityFrameworkCore": "Warning",
+    "Microsoft.AspNetCore.Watch.BrowserRefresh": "None",
+    "Microsoft.Hosting.Lifetime": "Information",
+    "Microsoft.AspNetCore.Watch": "Warning",
+    "System": "Warning"
+  }
+  ```
 
 **Rationale:** Enables compliance, diagnostics, and operational insight.
 
@@ -142,11 +107,14 @@ Each microservice must be **self-contained**:
 * `.gitignore` must exclude temporary files
 * `.dockerignore` must exclude build artifacts, specs, and IDE files
 * Cleanup enforced pre-release
+* **NO additional markdown documents** in the repository root (e.g., `COMPLIANCE_REVIEW.md` is forbidden). Only `README.md`, `LICENSE` are allowed.
+* **CODEOWNERS** file is MANDATORY at `.github/CODEOWNERS` with content: `* @MALIEV-Co-Ltd/core-developers`
 
 ---
 
 ### X. Docker Best Practices (NON-NEGOTIABLE)
 
+* **The Dockerfile MUST be located in the API project folder** (e.g., `Maliev.UploadService.Api/Dockerfile`), NOT at the repository root.
 * **ALL services MUST use the built-in `app` user** from Microsoft's ASP.NET runtime images
 * **NO custom user creation** with `useradd`, `adduser`, or `addgroup` commands
 * Multi-stage builds mandatory: SDK for build, ASP.NET runtime for final image
@@ -162,16 +130,16 @@ Each microservice must be **self-contained**:
 
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-WORKDIR /src
+WORKDIR /
 COPY nuget.config ./
-COPY ["Service.Api/Service.Api.csproj", "Service.Api/"]
+COPY ["Maliev.Service.Api/Maliev.Service.Api.csproj", "Maliev.Service.Api/"]
 RUN --mount=type=secret,id=nuget_username \
     --mount=type=secret,id=nuget_password \
     NUGET_USERNAME=$(cat /run/secrets/nuget_username) \
     NUGET_PASSWORD=$(cat /run/secrets/nuget_password) \
-    dotnet restore "Service.Api/Service.Api.csproj"
+    dotnet restore "Maliev.Service.Api/Maliev.Service.Api.csproj"
 COPY . .
-WORKDIR "/src/Service.Api"
+WORKDIR "/Maliev.Service.Api"
 RUN dotnet publish -c Release -o /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
@@ -182,7 +150,7 @@ COPY --from=build /app/publish .
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 HEALTHCHECK CMD curl -f http://localhost:8080/[service-name]/liveness || exit 1
-ENTRYPOINT ["dotnet", "Service.Api.dll"]
+ENTRYPOINT ["dotnet", "Maliev.Service.Api.dll"]
 ```
 
 **Rationale:** Microsoft's built-in `app` user provides security without complexity. BuildKit secrets prevent credential exposure in Docker image layers. Following Docker best practices ensures consistent, secure, and efficient container images across all services.
@@ -241,6 +209,28 @@ ENTRYPOINT ["dotnet", "Service.Api.dll"]
   * **Rationale**: FluentValidation adds unnecessary complexity and abstraction. Standard validation is built-in, sufficient, and reduces dependency bloat.
 * **NO FluentAssertions**: Use standard xUnit `Assert`.
   * **Rationale**: FluentAssertions adds a large dependency and encourages readable but sometimes ambiguous assertions. Standard `Assert` is part of the test framework, faster, and sufficient.
+
+---
+
+### XV. Project Structure & Naming (NON-NEGOTIABLE)
+
+* **Flat Structure**: For .NET applications, create the API, Data, and Tests projects **directly at the root of the repository**.
+  * ❌ NO `/src` folder
+  * ❌ NO `/tests` folder
+* **Naming Convention**: Projects MUST be named with the full company prefix.
+  * ✅ `Maliev.UploadService.Api`
+  * ❌ `UploadService.Api`
+* **Dockerfile Placement**: Must be inside the API project folder, NOT at the root.
+
+---
+
+### XVI. CI/CD Standards (NON-NEGOTIABLE)
+
+* **Workflow Filenames**: GitHub Actions workflows MUST be named explicitly:
+  * `ci-develop.yml`
+  * `ci-staging.yml`
+  * `ci-main.yml`
+* **No Docker Compose**: Use **Testcontainers** for all integration tests and local development verification. `docker-compose.yml` is NOT required or recommended.
 
 ---
 

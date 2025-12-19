@@ -1,9 +1,9 @@
-using Maliev.UploadService.Api.Models.Entities;
+using Maliev.UploadService.Data.Entities;
 
 namespace Maliev.UploadService.Api.Services;
 
 /// <summary>
-/// T168: Interface for bulk delete operations (FR-032, FR-033)
+/// Interface for bulk delete operations (FR-032, FR-033)
 /// </summary>
 public interface IBulkDeleteService
 {

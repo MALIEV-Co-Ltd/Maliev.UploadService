@@ -1,64 +1,45 @@
-using Asp.Versioning;
 using Maliev.UploadService.Api.BackgroundServices;
-using Maliev.UploadService.Api.Data;
 using Maliev.UploadService.Api.Metrics;
 using Maliev.UploadService.Api.Middleware;
 using Maliev.UploadService.Api.Services;
+using Maliev.UploadService.Data;
 using MassTransit;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ============================================================================
-// CONSTITUTION COMPLIANCE NOTE (Principle XIII - .NET Aspire Integration)
-// ============================================================================
-// The following ServiceDefaults calls are REQUIRED by constitution v1.7.0
-// but are commented out pending GitHub Packages authentication setup:
-//
-// builder.AddGoogleSecretManagerVolume(); // Load secrets from /mnt/secrets
-// builder.AddServiceDefaults(); // OpenTelemetry, health checks, resilience
-// builder.AddServiceMeters("uploadservice"); // Business metrics registration
-//
-// Once Maliev.Aspire.ServiceDefaults package is available via GitHub Packages,
-// uncomment these lines and remove manual infrastructure configuration below.
-// ============================================================================
+// --- Secrets & Configuration ---
+builder.AddGoogleSecretManagerVolume(); // Load secrets from /mnt/secrets if available
 
-// Configure JWT Authentication (T048)
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.Authority = builder.Configuration["Authentication:Authority"];
-        options.Audience = builder.Configuration["Authentication:Audience"];
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ClockSkew = TimeSpan.FromMinutes(5)
-        };
-    });
+// --- Infrastructure & Observability ---
+builder.AddServiceDefaults(); // OpenTelemetry, health checks, resilience
+builder.AddServiceMeters("uploads-meter"); // Register service meters for OpenTelemetry business metrics
+
+// JWT Authentication (tests override via PostConfigureAll with dynamic RSA keys)
+builder.AddJwtAuthentication();
 
 builder.Services.AddAuthorization();
 
-// Add API Versioning (T057)
-builder.Services.AddApiVersioning(options =>
-{
-    options.DefaultApiVersion = new ApiVersion(1, 0);
-    options.AssumeDefaultVersionWhenUnspecified = true;
-    options.ReportApiVersions = true;
-    options.ApiVersionReader = new UrlSegmentApiVersionReader();
-}).AddApiExplorer(options =>
-{
-    options.GroupNameFormat = "'v'V";
-    options.SubstituteApiVersionInUrl = true;
-});
+// --- API Configuration ---
+builder.AddDefaultCors(); // CORS from CORS:AllowedOrigins config
+builder.AddDefaultApiVersioning(); // API versioning with URL segment reader
 
-// Add OpenAPI/Scalar (T058)
-builder.Services.AddOpenApi();
+// Add OpenAPI (must be in Program.cs for XML comments to work via source generator)
+if (!builder.Environment.IsProduction())
+{
+    builder.Services.AddEndpointsApiExplorer();
+    builder.Services.AddOpenApi("v1", options =>
+    {
+        options.AddDocumentTransformer((document, context, cancellationToken) =>
+        {
+            document.Info.Title = "MALIEV Upload Service API";
+            document.Info.Version = "v1";
+            document.Info.Description = "Centralized file upload and storage service for the Maliev platform. Provides secure file upload with validation, lifecycle management, signed URLs for access control, and async event notifications.";
+            return Task.CompletedTask;
+        });
+    });
+}
 
 // T150: Configure FormOptions for large file handling (FR-023)
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
@@ -78,63 +59,29 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5);
 });
 
-// Add controllers with JSON options configured to use PascalCase
+// Add controllers with JSON options configured for camelCase
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        options.JsonSerializerOptions.PropertyNamingPolicy = null; // Use PascalCase (default C# naming)
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     });
 
-// Add DbContext (with health check - T059)
-builder.Services.AddDbContext<UploadServiceDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("UploadServiceDbContext")));
+// --- Infrastructure (Use ServiceDefaults extensions) ---
+// Database: Connects + sets up Retry Policy + Health Check
+builder.AddPostgresDbContext<UploadDbContext>(connectionStringName: "UploadDbContext");
 
-// Add Redis caching (with health check - T059)
-builder.Services.AddStackExchangeRedisCache(options =>
-{
-    options.Configuration = builder.Configuration.GetConnectionString("redis");
-});
+// Cache: Connects + sets up Health Check
+builder.AddRedisDistributedCache(instanceName: "upload:");
 
-// Add Health Checks (T059)
-builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("UploadServiceDbContext")!, name: "postgresql")
-    .AddRedis(builder.Configuration.GetConnectionString("redis")!, name: "redis");
-
-// T161: Configure MassTransit with RabbitMQ (FR-025)
-builder.Services.AddMassTransit(x =>
+// Messaging (RabbitMQ)
+// Note: Service Defaults handles host configuration from "rabbitmq" connection string
+builder.AddMassTransitWithRabbitMq(configurator =>
 {
     // T174: Register BulkDeleteJobConsumer
-    x.AddConsumer<Maliev.UploadService.Api.Consumers.BulkDeleteJobConsumer>();
+    configurator.AddConsumer<Maliev.UploadService.Api.Consumers.BulkDeleteJobConsumer>();
 
     // Configure message topology for routing keys: maliev.uploadservice.v1.{entity}.{action}
-    x.SetKebabCaseEndpointNameFormatter();
-
-    x.UsingRabbitMq((context, cfg) =>
-    {
-        cfg.Host(builder.Configuration.GetConnectionString("rabbitmq") ?? "localhost", h =>
-        {
-            h.Username(builder.Configuration["RabbitMQ:Username"] ?? "guest");
-            h.Password(builder.Configuration["RabbitMQ:Password"] ?? "guest");
-        });
-
-        // Configure exchange and routing keys
-        cfg.Message<Maliev.UploadService.Api.Events.UploadCompletedEvent>(e =>
-        {
-            e.SetEntityName("maliev.uploadservice.v1.upload.completed");
-        });
-
-        cfg.Message<Maliev.UploadService.Api.Events.UploadFailedEvent>(e =>
-        {
-            e.SetEntityName("maliev.uploadservice.v1.upload.failed");
-        });
-
-        cfg.Message<Maliev.UploadService.Api.Events.FileDeletedEvent>(e =>
-        {
-            e.SetEntityName("maliev.uploadservice.v1.file.deleted");
-        });
-
-        cfg.ConfigureEndpoints(context);
-    });
+    configurator.SetKebabCaseEndpointNameFormatter();
 });
 
 // Add services
@@ -173,43 +120,49 @@ builder.Services.AddSingleton<nClam.IClamClient>(sp =>
 builder.Services.AddSingleton<UploadMetrics>();
 
 var app = builder.Build();
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
-// Apply database migrations
-await MigrateDatabaseAsync(app.Services);
+// --- Database Migrations ---
+if (!app.Environment.IsEnvironment("Testing"))
+{
+    try
+    {
+        await app.MigrateDatabaseAsync<UploadDbContext>();
 
-// TODO: Map default endpoints (T060) - uncomment once ServiceDefaults is configured
-// app.MapDefaultEndpoints(servicePrefix: "uploadservice");
-// app.MapApiDocumentation(servicePrefix: "uploadservice");
+        // Seed sample data in Development environment
+        using var scope = app.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
+        await Maliev.UploadService.Api.Data.SeedData.SeedSamplePoliciesAsync(
+            dbContext,
+            logger,
+            app.Environment.IsDevelopment());
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Database migration failed - application may not function correctly");
+        // Don't throw - allow app to start for debugging
+    }
+}
 
-// Configure middleware pipeline (Constitution best practice: CorrelationId before Exception handling)
+// --- Middleware Pipeline ---
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-
-// Configure the HTTP request pipeline
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-    // Map Scalar API documentation (T060)
-    app.MapScalarApiReference(options =>
-    {
-        options.Title = "Upload Service API";
-        options.Theme = ScalarTheme.Purple;
-    });
-}
-
 app.UseHttpsRedirection();
+app.UseRouting();
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// --- Endpoints ---
 app.MapControllers();
+app.MapDefaultEndpoints(servicePrefix: "upload"); // Health checks: /upload/liveness, /upload/readiness
+app.MapApiDocumentation(servicePrefix: "upload"); // OpenAPI: /upload/openapi/v1.json, Scalar UI: /upload/scalar
 
-app.Run();
+logger.LogInformation("UploadService started successfully on {Environment} environment", app.Environment.EnvironmentName);
 
-static async Task MigrateDatabaseAsync(IServiceProvider services)
-{
-    using var scope = services.CreateScope();
-    var context = scope.ServiceProvider.GetRequiredService<UploadServiceDbContext>();
-    await context.Database.MigrateAsync();
-}
+await app.RunAsync();
 
-// Make Program class accessible to tests
+/// <summary>
+/// Main program class for the application
+/// </summary>
 public partial class Program { }

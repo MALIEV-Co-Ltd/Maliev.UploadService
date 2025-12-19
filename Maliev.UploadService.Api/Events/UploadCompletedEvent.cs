@@ -1,7 +1,7 @@
 namespace Maliev.UploadService.Api.Events;
 
 /// <summary>
-/// T155: Event published when a file upload completes successfully
+/// Event published when a file upload completes successfully
 /// Routing Key: maliev.uploadservice.v1.upload.completed
 /// </summary>
 public class UploadCompletedEvent

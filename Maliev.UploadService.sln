@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Maliev.UploadService.Api", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Maliev.UploadService.Tests", "Maliev.UploadService.Tests\Maliev.UploadService.Tests.csproj", "{B768565F-6B19-4ACE-89DE-B99D73566185}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Maliev.UploadService.Data", "Maliev.UploadService.Data\Maliev.UploadService.Data.csproj", "{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +43,18 @@ Global
 		{B768565F-6B19-4ACE-89DE-B99D73566185}.Release|x64.Build.0 = Release|Any CPU
 		{B768565F-6B19-4ACE-89DE-B99D73566185}.Release|x86.ActiveCfg = Release|Any CPU
 		{B768565F-6B19-4ACE-89DE-B99D73566185}.Release|x86.Build.0 = Release|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Debug|x64.Build.0 = Debug|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Debug|x86.Build.0 = Debug|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Release|x64.ActiveCfg = Release|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Release|x64.Build.0 = Release|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Release|x86.ActiveCfg = Release|Any CPU
+		{2DD6FF4F-B182-4AA9-9D49-C72FC49E543B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

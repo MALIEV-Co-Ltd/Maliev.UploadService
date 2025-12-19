@@ -1,8 +1,8 @@
 using Asp.Versioning;
-using Maliev.UploadService.Api.Data;
+using Maliev.UploadService.Data;
 using Maliev.UploadService.Api.Events;
 using Maliev.UploadService.Api.Extensions;
-using Maliev.UploadService.Api.Models.Entities;
+using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
@@ -16,13 +16,13 @@ namespace Maliev.UploadService.Api.Controllers.v1;
 
 [ApiController]
 [ApiVersion("1.0")]
-[Route("api/v{version:apiVersion}/files")]
+[Route("upload/v{version:apiVersion}/files")]
 [Authorize]
 public class FilesController : ControllerBase
 {
     private readonly IStorageService _storageService;
     private readonly IAuthorizationPolicyService _authorizationService;
-    private readonly UploadServiceDbContext _dbContext;
+    private readonly UploadDbContext _dbContext;
     private readonly IDistributedCache _cache;
     private readonly ILogger<FilesController> _logger;
     private readonly IPublishEndpoint _publishEndpoint;
@@ -31,7 +31,7 @@ public class FilesController : ControllerBase
     public FilesController(
         IStorageService storageService,
         IAuthorizationPolicyService authorizationService,
-        UploadServiceDbContext dbContext,
+        UploadDbContext dbContext,
         IDistributedCache cache,
         ILogger<FilesController> logger,
         IPublishEndpoint publishEndpoint)
@@ -45,7 +45,7 @@ public class FilesController : ControllerBase
     }
 
     /// <summary>
-    /// T097: Get file metadata by upload ID with authorization check
+    /// Get file metadata by upload ID with authorization check
     /// </summary>
     [HttpGet("{uploadId}")]
     [ProducesResponseType(typeof(FileMetadataResponse), StatusCodes.Status200OK)]
@@ -103,7 +103,7 @@ public class FilesController : ControllerBase
     }
 
     /// <summary>
-    /// T098: Query files by path prefix with pagination and authorization
+    /// Query files by path prefix with pagination and authorization
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(QueryFilesResponse), StatusCodes.Status200OK)]
@@ -172,7 +172,7 @@ public class FilesController : ControllerBase
     }
 
     /// <summary>
-    /// T099: Generate signed URL for file download with caching
+    /// Generate signed URL for file download with caching
     /// </summary>
     [HttpPost("{uploadId}/signed-url")]
     [ProducesResponseType(typeof(SignedUrlResponse), StatusCodes.Status200OK)]
@@ -267,7 +267,7 @@ public class FilesController : ControllerBase
     }
 
     /// <summary>
-    /// T120-T124: Delete file with authorization and retention policy checks (User Story 5)
+    /// Delete file with authorization and retention policy checks (User Story 5)
     /// </summary>
     [HttpDelete("{uploadId}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -348,7 +348,7 @@ public class FilesController : ControllerBase
     }
 
     /// <summary>
-    /// T100: Log file-related events for audit trail
+    /// Log file-related events for audit trail
     /// </summary>
     private async Task LogFileEventAsync(
         string uploadId,

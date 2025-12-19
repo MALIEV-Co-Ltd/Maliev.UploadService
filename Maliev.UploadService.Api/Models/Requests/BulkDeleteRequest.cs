@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Maliev.UploadService.Api.Models.Requests;
 
 /// <summary>
-/// T166: Request model for bulk delete operation (FR-032)
+/// Request model for bulk delete operation (FR-032)
 /// </summary>
 public class BulkDeleteRequest
 {

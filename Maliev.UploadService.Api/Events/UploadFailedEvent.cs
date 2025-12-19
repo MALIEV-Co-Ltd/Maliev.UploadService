@@ -1,7 +1,7 @@
 namespace Maliev.UploadService.Api.Events;
 
 /// <summary>
-/// T156: Event published when an upload fails (FR-025)
+/// Event published when an upload fails (FR-025)
 /// Routing key: maliev.uploadservice.v1.upload.failed
 /// </summary>
 public class UploadFailedEvent

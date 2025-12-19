@@ -21,7 +21,7 @@ public interface IStorageService
     Task<StorageFileMetadata?> GetFileMetadataAsync(string storagePath, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// T145: Initiates a resumable upload session (FR-022, FR-024)
+    /// Initiates a resumable upload session (FR-022, FR-024)
     /// </summary>
     Task<ResumableUploadSession> InitiateResumableUploadAsync(
         string storagePath,
@@ -30,7 +30,7 @@ public interface IStorageService
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// T146: Resumes an upload with a chunk of data (FR-022, FR-024)
+    /// Resumes an upload with a chunk of data (FR-022, FR-024)
     /// </summary>
     Task<ResumableUploadProgress> ResumeUploadAsync(
         string sessionUri,
