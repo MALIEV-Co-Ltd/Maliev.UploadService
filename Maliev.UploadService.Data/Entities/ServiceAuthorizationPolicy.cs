@@ -45,3 +45,4 @@ public class ServiceAuthorizationPolicy
     [Required]
     public bool IsActive { get; set; } = true;
 }
+

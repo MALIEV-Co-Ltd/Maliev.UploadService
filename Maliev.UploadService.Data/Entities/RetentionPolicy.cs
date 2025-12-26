@@ -39,3 +39,4 @@ public class StorageClassTransition
     [Required]
     public required string StorageClass { get; set; }
 }
+

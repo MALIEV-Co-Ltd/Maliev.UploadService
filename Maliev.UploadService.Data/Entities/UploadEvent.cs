@@ -54,3 +54,4 @@ public enum EventResult
     Failure,
     Warning
 }
+

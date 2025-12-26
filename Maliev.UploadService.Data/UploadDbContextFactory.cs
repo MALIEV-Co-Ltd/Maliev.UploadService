@@ -20,3 +20,4 @@ public class UploadDbContextFactory : IDesignTimeDbContextFactory<UploadDbContex
         return new UploadDbContext(optionsBuilder.Options);
     }
 }
+
