@@ -3,6 +3,8 @@ using Maliev.UploadService.Api.Consumers;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
+using Maliev.UploadService.Api.Services.Auth;
+using Maliev.Aspire.ServiceDefaults.Authorization;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,7 +17,7 @@ namespace Maliev.UploadService.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("upload/v{version:apiVersion}/admin")]
-[Authorize(Roles = "Admin")] // Restrict to admin users only
+[Authorize]
 public class AdminController : ControllerBase
 {
     private readonly IBulkDeleteService _bulkDeleteService;
@@ -33,9 +35,24 @@ public class AdminController : ControllerBase
     }
 
     /// <summary>
+    /// GET /api/v1/admin/metrics - Returns service telemetry metrics
+    /// </summary>
+    [HttpGet("metrics")]
+    [RequirePermission(UploadPermissions.AdminViewMetrics, RequireLiveCheck = true)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public IActionResult GetMetrics()
+    {
+        // Placeholder for metrics summary
+        return Ok(new { status = "Healthy", activeUploads = 0, storageUsedBytes = 0 });
+    }
+
+    /// <summary>
     /// POST /api/v1/admin/bulk-delete - Initiates a bulk delete job (FR-032)
     /// </summary>
     [HttpPost("bulk-delete")]
+    [RequirePermission(UploadPermissions.AdminBulkDelete, RequireLiveCheck = true)]
     [ProducesResponseType(typeof(BulkDeleteJobResponse), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -85,6 +102,7 @@ public class AdminController : ControllerBase
     /// GET /api/v1/admin/bulk-delete/{jobId} - Gets bulk delete job status (FR-033)
     /// </summary>
     [HttpGet("bulk-delete/{jobId}")]
+    [RequirePermission(UploadPermissions.AdminBulkDelete, RequireLiveCheck = true)]
     [ProducesResponseType(typeof(BulkDeleteJobResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -113,3 +131,4 @@ public class AdminController : ControllerBase
         });
     }
 }
+

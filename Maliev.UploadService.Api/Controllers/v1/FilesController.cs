@@ -6,6 +6,8 @@ using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
+using Maliev.UploadService.Api.Services.Auth;
+using Maliev.Aspire.ServiceDefaults.Authorization;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -48,6 +50,7 @@ public class FilesController : ControllerBase
     /// Get file metadata by upload ID with authorization check
     /// </summary>
     [HttpGet("{uploadId}")]
+    [RequirePermission(UploadPermissions.FilesRead, RequireLiveCheck = true)]
     [ProducesResponseType(typeof(FileMetadataResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -67,7 +70,7 @@ public class FilesController : ControllerBase
             return NotFound(new { error = "File not found" });
         }
 
-        // T097: Authorization check - ensure service can access this file
+        // T097: Authorization check - ensure service can access this file (Resource-scoped)
         var canAccess = await _authorizationService.CanAccessPathAsync(
             serviceId,
             fileMetadata.StoragePath,
@@ -106,6 +109,7 @@ public class FilesController : ControllerBase
     /// Query files by path prefix with pagination and authorization
     /// </summary>
     [HttpGet]
+    [RequirePermission(UploadPermissions.FilesList, RequireLiveCheck = true, ResourcePathTemplate = "folders/{request.PathPrefix}")]
     [ProducesResponseType(typeof(QueryFilesResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> QueryFiles(
@@ -175,6 +179,7 @@ public class FilesController : ControllerBase
     /// Generate signed URL for file download with caching
     /// </summary>
     [HttpPost("{uploadId}/signed-url")]
+    [RequirePermission(UploadPermissions.FilesRead, RequireLiveCheck = true)]
     [ProducesResponseType(typeof(SignedUrlResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -270,6 +275,7 @@ public class FilesController : ControllerBase
     /// Delete file with authorization and retention policy checks (User Story 5)
     /// </summary>
     [HttpDelete("{uploadId}")]
+    [RequirePermission(UploadPermissions.FilesDelete, RequireLiveCheck = true)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -376,3 +382,4 @@ public class FilesController : ControllerBase
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 }
+

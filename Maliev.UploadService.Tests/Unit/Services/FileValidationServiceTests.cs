@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using Maliev.UploadService.Api.Services;
 using Moq;
 using nClam;
@@ -215,3 +216,5 @@ public class FileValidationServiceTests
         Assert.Contains("image", result.DetectedContentType, StringComparison.OrdinalIgnoreCase);
     }
 }
+
+

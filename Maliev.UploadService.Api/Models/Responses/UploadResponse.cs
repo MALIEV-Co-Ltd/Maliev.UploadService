@@ -14,3 +14,4 @@ public class UploadResponse
     public DateTime? CompletedAt { get; set; }
     public string? SignedUrl { get; set; }
 }
+

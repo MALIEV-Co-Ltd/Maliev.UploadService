@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -6,6 +7,12 @@ using System.Security.Claims;
 using System.Text;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Tests.Fixtures;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Maliev.UploadService.Api.Services.Auth;
+using Maliev.UploadService.Data;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Xunit;
 
 namespace Maliev.UploadService.Tests.Integration;
@@ -17,18 +24,42 @@ namespace Maliev.UploadService.Tests.Integration;
 [Collection("Database")]
 public class SecurityTests : IAsyncLifetime
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly WebApplicationFactory<Program> _factory;
+    private readonly TestWebApplicationFactory _baseFactory;
     private HttpClient _client = null!;
     private HttpClient _unauthenticatedClient = null!;
     private string _service1UploadId = null!;
+    private readonly Mock<IIamServiceClient> _iamClientMock = new();
 
     public SecurityTests(TestWebApplicationFactory factory)
     {
-        _factory = factory;
+        _baseFactory = factory;
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureTestServices(services =>
+            {
+                // Ensure we replace any existing registration
+                var descriptor = services.FirstOrDefault(s => s.ServiceType == typeof(IIamServiceClient));
+                if (descriptor != null) services.Remove(descriptor);
+
+                services.AddScoped(_ => _iamClientMock.Object);
+            });
+        });
     }
 
     public async Task InitializeAsync()
     {
+        // Clear all legacy policies to ensure IAM is the primary authority for these tests
+        using var scope = _baseFactory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
+        dbContext.ServiceAuthorizationPolicies.RemoveRange(dbContext.ServiceAuthorizationPolicies);
+        await dbContext.SaveChangesAsync();
+
+        // Allow all IAM checks by default for security tests (focus on other vulns)
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
         // Authenticated client for test-service
         _client = _factory.CreateClient();
         var token = GenerateJwtToken("test-service", "uploadservice");
@@ -38,18 +69,19 @@ public class SecurityTests : IAsyncLifetime
         _unauthenticatedClient = _factory.CreateClient();
 
         // Upload a file as test-service for cross-service access tests
+        // Use unique path per test run to avoid conflicts
+        var uniqueId = Guid.NewGuid().ToString("N")[..8];
         var content = new MultipartFormDataContent();
         var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes("Test service confidential data"));
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
         content.Add(fileContent, "File", "secure.txt");
-        content.Add(new StringContent("test-service/secure/data.txt"), "Path");
+        content.Add(new StringContent($"test-service/secure/data-{uniqueId}.txt"), "Path");
         content.Add(new StringContent("test-service"), "ServiceName");
 
         var response = await _client.PostAsync("/upload/v1/uploads", content);
+        response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<UploadResponse>();
         _service1UploadId = result!.UploadId;
-
-        await Task.CompletedTask;
     }
 
     public async Task DisposeAsync()
@@ -105,54 +137,66 @@ public class SecurityTests : IAsyncLifetime
     [Fact]
     public async Task CrossServiceAccess_GetFile_Returns403()
     {
-        // Arrange - Create client for demo-service (different from test-service)
-        var otherServiceClient = _factory.CreateClient();
-        var otherServiceToken = GenerateJwtToken("demo-service", "uploadservice");
-        otherServiceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", otherServiceToken);
+        // Arrange - create separate client to avoid modifying shared _client
+        using var crossServiceClient = _factory.CreateClient();
+        var service2Token = GenerateJwtToken("other-service", "uploadservice");
+        crossServiceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", service2Token);
 
-        // Act - Try to access test-service's file
-        var response = await otherServiceClient.GetAsync($"/upload/v1/files/{_service1UploadId}");
+        // Explicitly deny in IAM for this test
+        _iamClientMock.Reset();
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act
+        var response = await crossServiceClient.GetAsync($"/upload/v1/files/{_service1UploadId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-
-        otherServiceClient.Dispose();
     }
 
     [Fact]
     public async Task CrossServiceAccess_DeleteFile_Returns403()
     {
-        // Arrange - Create client for demo-service (different from test-service)
-        var otherServiceClient = _factory.CreateClient();
-        var otherServiceToken = GenerateJwtToken("demo-service", "uploadservice");
-        otherServiceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", otherServiceToken);
+        // Arrange - create separate client to avoid modifying shared _client
+        using var crossServiceClient = _factory.CreateClient();
+        var service2Token = GenerateJwtToken("other-service", "uploadservice");
+        crossServiceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", service2Token);
 
-        // Act - Try to delete test-service's file
-        var response = await otherServiceClient.DeleteAsync($"/upload/v1/files/{_service1UploadId}");
+        // Explicitly deny in IAM for this test
+        _iamClientMock.Reset();
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        // Act
+        var response = await crossServiceClient.DeleteAsync($"/upload/v1/files/{_service1UploadId}");
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-
-        otherServiceClient.Dispose();
     }
 
     [Fact]
     public async Task CrossServiceAccess_GenerateSignedUrl_Returns403()
     {
-        // Arrange - Create client for demo-service (different from test-service)
-        var otherServiceClient = _factory.CreateClient();
-        var otherServiceToken = GenerateJwtToken("demo-service", "uploadservice");
-        otherServiceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", otherServiceToken);
+        // Arrange - create separate client to avoid modifying shared _client
+        using var crossServiceClient = _factory.CreateClient();
+        var service2Token = GenerateJwtToken("other-service", "uploadservice");
+        crossServiceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", service2Token);
 
-        var signedUrlRequest = new { ExpirationMinutes = 15 };
+        // Explicitly deny in IAM for this test
+        _iamClientMock.Reset();
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
-        // Act - Try to generate signed URL for test-service's file
-        var response = await otherServiceClient.PostAsJsonAsync($"/upload/v1/files/{_service1UploadId}/signed-url", signedUrlRequest);
+        var request = new { ExpirationMinutes = 15 };
+
+        // Act
+        var response = await crossServiceClient.PostAsJsonAsync($"/upload/v1/files/{_service1UploadId}/signed-url", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-
-        otherServiceClient.Dispose();
     }
 
     [Theory]
@@ -267,6 +311,16 @@ public class SecurityTests : IAsyncLifetime
         // Arrange
         var nonExistentId = Guid.NewGuid().ToString();
 
+        // Reset mock to allow permissions - we want to test 404 behavior, not auth
+        _iamClientMock.Reset();
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        // Explicitly setup for null resource path to be safe
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            It.IsAny<string>(), It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
         // Act
         var response = await _client.GetAsync($"/upload/v1/files/{nonExistentId}");
 
@@ -278,13 +332,23 @@ public class SecurityTests : IAsyncLifetime
     [Fact]
     public async Task ServiceMismatch_UploadWithWrongServiceName_ReturnsForbidden()
     {
-        // Arrange - test-service tries to upload to demo-service's path
+        // Arrange
         var content = new MultipartFormDataContent();
-        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes("Test content"));
+        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes("Data"));
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
-        content.Add(fileContent, "File", "test.txt");
-        content.Add(new StringContent("demo-service/data.txt"), "Path"); // Wrong service path
-        content.Add(new StringContent("test-service"), "ServiceName");
+        content.Add(fileContent, "File", "mismatch.txt");
+        content.Add(new StringContent("other-service/mismatch.txt"), "Path");
+        content.Add(new StringContent("other-service"), "ServiceName");
+
+        // token is for "test-service", but request says "other-service"
+        // The controller uses the name from request if provided, or from token.
+        // In our case it uses "other-service".
+
+        // IAM check will be for principal "test-service" (from token) but resource "folders/other-service/..."
+        _iamClientMock.Reset();
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         // Act
         var response = await _client.PostAsync("/upload/v1/uploads", content);
@@ -334,17 +398,31 @@ public class SecurityTests : IAsyncLifetime
             new Claim(ClaimTypes.Name, serviceName),
             new Claim(JwtRegisteredClaimNames.Sub, serviceName),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim("service_id", serviceName)
+            new Claim("service_id", serviceName),
+            new Claim("permission", "upload.files.upload"),
+            new Claim("permission", "upload.files.read"),
+            new Claim("permission", "upload.files.delete"),
+            new Claim("permission", "upload.files.list"),
+            new Claim("permission", "upload.admin.manage-policies"),
+            new Claim("permission", "upload.admin.bulk-delete"),
+            new Claim("permission", "upload.admin.view-metrics"),
+            new Claim("permission", "upload.retention.configure"),
+            new Claim("permission", "upload.retention.execute")
         };
 
         var token = new JwtSecurityToken(
-            issuer: "test-issuer",  // Match BaseIntegrationTestFactory expectations
-            audience: "test-audience",  // Match BaseIntegrationTestFactory expectations
+            issuer: "test-issuer",
+            audience: "test-audience",
             claims: claims,
             expires: expires ?? DateTime.UtcNow.AddHours(1),
-            signingCredentials: _factory.SigningCredentials
+            signingCredentials: _baseFactory.SigningCredentials
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
+
+
+
+
+

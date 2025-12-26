@@ -6,6 +6,8 @@ using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
+using Maliev.UploadService.Api.Services.Auth;
+using Maliev.Aspire.ServiceDefaults.Authorization;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -47,6 +49,7 @@ public class UploadsController : ControllerBase
 
     [HttpPost]
     [Consumes("multipart/form-data")]
+    [RequirePermission(UploadPermissions.FilesUpload, ResourcePathTemplate = "folders/{request.Path}")]
     [ProducesResponseType(typeof(UploadResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -88,6 +91,8 @@ public class UploadsController : ControllerBase
                 await LogUploadEventAsync(uploadId, serviceName, request.Path, "PathTraversalAttempt", cancellationToken);
                 return BadRequest(new { error = $"Invalid path: {ex.Message}" });
             }
+
+            // NOTE: Manual check retained for Legacy Fallback logic until decommissioning
             var canUpload = await _authorizationService.CanUploadToPathAsync(
                 serviceName,
                 sanitizedPath,
@@ -302,6 +307,7 @@ public class UploadsController : ControllerBase
     /// POST /api/v1/uploads/resumable - Initiates a resumable upload session (FR-022)
     /// </summary>
     [HttpPost("resumable")]
+    [RequirePermission(UploadPermissions.FilesUpload, ResourcePathTemplate = "folders/{request.Path}")]
     [ProducesResponseType(typeof(InitiateResumableUploadResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -538,3 +544,4 @@ public class UploadsController : ControllerBase
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 }
+

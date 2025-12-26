@@ -10,3 +10,4 @@ public class GenerateSignedUrlRequest
     [Range(1, 10080)]
     public int ExpirationMinutes { get; set; } = 60;
 }
+

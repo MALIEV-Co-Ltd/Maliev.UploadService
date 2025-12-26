@@ -72,3 +72,4 @@ public class ResumableUploadProgress
     public required bool IsComplete { get; set; }
     public string? StoragePath { get; set; }
 }
+

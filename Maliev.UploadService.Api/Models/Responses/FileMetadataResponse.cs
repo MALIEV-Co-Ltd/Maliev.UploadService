@@ -16,3 +16,4 @@ public class FileMetadataResponse
     public DateTime? ExpiresAt { get; set; }
     public Dictionary<string, string>? Metadata { get; set; }
 }
+

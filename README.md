@@ -159,22 +159,31 @@ dotnet test Maliev.UploadService.Tests
 
 ## Configuration
 
-### Service Authorization Policies
+### Authorization (IAM Permission-Based)
 
-Each microservice must have an authorization policy configured in the database:
+The service has migrated to a resource-scoped IAM permission model. Authorization is now handled via the central `Maliev.IAMService`.
+
+#### Required Permissions
+- `upload.files.upload`: Upload files to a resource path (e.g., `folders/invoices/**`).
+- `upload.files.read`: Download/read files.
+- `upload.files.delete`: Delete individual files.
+- `upload.admin.bulk-delete`: Trigger bulk delete operations.
+
+#### Usage in Code
+Endpoints are protected using the `[RequirePermission]` attribute:
+```csharp
+[HttpPost]
+[RequirePermission(UploadPermissions.FilesUpload, ResourcePathTemplate = "folders/{request.Path}")]
+public async Task<IActionResult> UploadFile([FromForm] UploadFileRequest request) { ... }
+```
+
+### Legacy Authorization (Deprecated)
+
+Previously, each microservice had an authorization policy configured in the database. This is now used as a fallback during the migration phase and will be decommissioned soon.
 
 ```sql
-INSERT INTO service_authorization_policies (
-    policy_id, service_id, service_name,
-    allowed_path_prefixes, allowed_content_types,
-    max_file_size_bytes, storage_quota_bytes,
-    allow_overwrite, allow_resumable_upload
-) VALUES (
-    gen_random_uuid(), 'quotation-service', 'Quotation Service',
-    '["quotations/", "attachments/"]', '["application/pdf", "image/png", "image/jpeg"]',
-    104857600, 10737418240,
-    false, true
-);
+-- DEPRECATED: Use IAM Service for new integrations
+INSERT INTO service_authorization_policies (...) VALUES (...);
 ```
 
 ### Retention Policies

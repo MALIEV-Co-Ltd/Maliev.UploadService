@@ -54,5 +54,17 @@ coverage/
 TestResult.xml
 nunit-*.xml
 
+.claude/settings.local.json
+.gemini/settings.local.json
+
 *.csproj.user
 .vs/
+# Test Outputs
+*test-output.txt
+*_error.txt
+
+
+# Test Outputs
+*test-output.txt
+*_error.txt
+

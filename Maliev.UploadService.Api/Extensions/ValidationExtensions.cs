@@ -124,3 +124,4 @@ public static partial class ValidationExtensions
     [GeneratedRegex(@"\{[^}]+\}", RegexOptions.Compiled)]
     private static partial Regex PlaceholderRegex();
 }
+

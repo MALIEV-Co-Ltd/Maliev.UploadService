@@ -20,3 +20,4 @@ public class UploadFailedEvent
 
     public string? ErrorDetails { get; set; }
 }
+

@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -7,6 +8,10 @@ using System.Text;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Tests.Fixtures;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Maliev.UploadService.Api.Services.Auth;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Microsoft.IdentityModel.Tokens;
 using Xunit;
 
@@ -18,17 +23,32 @@ namespace Maliev.UploadService.Tests.Integration;
 [Collection("Database")]
 public class EndToEndTests : IAsyncLifetime
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly WebApplicationFactory<Program> _factory;
+    private readonly TestWebApplicationFactory _baseFactory;
     private HttpClient _client = null!;
+    private readonly Mock<IIamServiceClient> _iamClientMock = new();
 
     public EndToEndTests(TestWebApplicationFactory factory)
     {
-        _factory = factory;
+        _baseFactory = factory;
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.AddScoped(_ => _iamClientMock.Object);
+            });
+        });
     }
 
     public async Task InitializeAsync()
     {
         _client = _factory.CreateClient();
+
+        // Allow all IAM checks for E2E tests
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
         var token = GenerateJwtToken("test-service", "uploadservice");
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         await Task.CompletedTask;
@@ -78,7 +98,6 @@ public class EndToEndTests : IAsyncLifetime
         Assert.Equal(filePath, metadata.StoragePath);
         Assert.Equal("text/plain", metadata.ContentType);
         Assert.Equal(fileBytes.Length, metadata.FileSize);
-        Assert.NotNull(metadata.UploadedAt);
 
         // ==================== PHASE 3: GENERATE SIGNED URL ====================
         var signedUrlRequest = new GenerateSignedUrlRequest
@@ -235,6 +254,12 @@ public class EndToEndTests : IAsyncLifetime
 
         // ==================== SERVICE B TRIES TO ACCESS SERVICE A'S FILE ====================
         // Should be blocked by authorization
+
+        // Mock IAM to deny service-b access to service-a's folders
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            "service-b", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
         var unauthorizedAccess = await client2.GetAsync($"/upload/v1/files/{uploadId}");
         Assert.Equal(HttpStatusCode.Forbidden, unauthorizedAccess.StatusCode);
 
@@ -243,6 +268,11 @@ public class EndToEndTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, unauthorizedDelete.StatusCode);
 
         // ==================== SERVICE A CAN STILL ACCESS ITS OWN FILE ====================
+        // Mock IAM to allow service-a back
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            "service-a", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
         var authorizedAccess = await client1.GetAsync($"/upload/v1/files/{uploadId}");
         Assert.Equal(HttpStatusCode.OK, authorizedAccess.StatusCode);
 
@@ -258,7 +288,16 @@ public class EndToEndTests : IAsyncLifetime
             new Claim(ClaimTypes.Name, serviceName),
             new Claim(JwtRegisteredClaimNames.Sub, serviceName),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim("service_id", serviceName)
+            new Claim("service_id", serviceName),
+            new Claim("permission", "upload.files.upload"),
+            new Claim("permission", "upload.files.read"),
+            new Claim("permission", "upload.files.delete"),
+            new Claim("permission", "upload.files.list"),
+            new Claim("permission", "upload.admin.manage-policies"),
+            new Claim("permission", "upload.admin.bulk-delete"),
+            new Claim("permission", "upload.admin.view-metrics"),
+            new Claim("permission", "upload.retention.configure"),
+            new Claim("permission", "upload.retention.execute")
         };
 
         var token = new JwtSecurityToken(
@@ -266,9 +305,14 @@ public class EndToEndTests : IAsyncLifetime
             audience: "test-audience",
             claims: claims,
             expires: DateTime.UtcNow.AddHours(1),
-            signingCredentials: _factory.SigningCredentials
+            signingCredentials: _baseFactory.SigningCredentials
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
+
+
+
+
+

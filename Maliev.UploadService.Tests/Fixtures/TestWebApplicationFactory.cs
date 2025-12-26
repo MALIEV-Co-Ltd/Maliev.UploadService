@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Data;
 using Maliev.UploadService.Data.Entities;
@@ -13,6 +14,18 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
     protected override void ConfigureAdditionalServices(IServiceCollection services)
     {
         base.ConfigureAdditionalServices(services);
+
+        // Add permission-based authorization infrastructure for tests
+        services.AddHttpContextAccessor();
+#pragma warning disable ASPDEPR006
+        services.AddSingleton<Microsoft.AspNetCore.Mvc.Infrastructure.IActionContextAccessor,
+                              Microsoft.AspNetCore.Mvc.Infrastructure.ActionContextAccessor>();
+#pragma warning restore ASPDEPR006
+        services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider,
+                              Maliev.Aspire.ServiceDefaults.Authorization.PermissionAuthorizationPolicyProvider>();
+        services.AddScoped<Microsoft.AspNetCore.Authorization.IAuthorizationHandler,
+                           Maliev.Aspire.ServiceDefaults.Authorization.PermissionAuthorizationHandler>();
+        services.AddAuthorizationBuilder();
 
         // Replace ClamAV client with mock implementation for tests
         // Remove the real ClamClient registration
@@ -127,6 +140,25 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
             });
 
         services.AddScoped(_ => mockStorageService.Object);
+
+        // Register default permissive IIamServiceClient mock
+        // Tests that need restrictive IAM behavior should override via .WithWebHostBuilder()
+        var iamClientDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IIamServiceClient));
+        if (iamClientDescriptor != null)
+        {
+            services.Remove(iamClientDescriptor);
+        }
+
+        var mockIamClient = new Mock<IIamServiceClient>();
+        // Default: allow all permissions (tests override for restrictive scenarios)
+        mockIamClient.Setup(m => m.CheckPermissionAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        services.AddScoped(_ => mockIamClient.Object);
     }
 
     protected override async Task SeedTestDataAsync()
@@ -186,4 +218,37 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
         context.ServiceAuthorizationPolicies.AddRange(policies);
         await context.SaveChangesAsync();
     }
+
+    public HttpClient CreateAuthenticatedClientWithAllPermissions(string userId = "test-user")
+    {
+        var claims = new List<System.Security.Claims.Claim>
+        {
+            new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub, userId),
+            new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new("permission", "upload.files.upload"),
+            new("permission", "upload.files.read"),
+            new("permission", "upload.files.delete"),
+            new("permission", "upload.files.list"),
+            new("permission", "upload.admin.manage-policies"),
+            new("permission", "upload.admin.bulk-delete"),
+            new("permission", "upload.admin.view-metrics"),
+            new("permission", "upload.retention.configure"),
+            new("permission", "upload.retention.execute")
+        };
+
+        var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
+            issuer: "test-issuer",
+            audience: "test-audience",
+            claims: claims,
+            expires: DateTime.UtcNow.AddHours(1),
+            signingCredentials: SigningCredentials
+        );
+
+        var tokenString = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
+        var client = CreateClient();
+        client.DefaultRequestHeaders.Add("Authorization", $"Bearer {tokenString}");
+        return client;
+    }
 }
+
+

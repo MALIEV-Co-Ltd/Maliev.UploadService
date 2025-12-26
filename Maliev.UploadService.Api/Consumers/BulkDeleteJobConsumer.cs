@@ -42,3 +42,4 @@ public class BulkDeleteJobMessage
 {
     public required string JobId { get; set; }
 }
+

@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using System.IdentityModel.Tokens.Jwt;
 using MassTransit;
 using Microsoft.Extensions.Configuration;
@@ -130,6 +131,19 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.ConfigureAppConfiguration((context, config) =>
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Service:Name"] = "UploadService",
+                ["Service:Version"] = "1.0.0-test",
+                // Enable permission-based authorization for tests
+                ["Features:PermissionBasedAuthEnabled"] = "true",
+                // Enable resource-scoped auth to force IAM checks (not just JWT)
+                ["Features:ResourceScopedAuthEnabled"] = "true"
+            });
+        });
+
         builder.ConfigureTestServices(services =>
         {
             // Configure JWT Bearer authentication with test RSA key
@@ -383,3 +397,5 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
         return client;
     }
 }
+
+

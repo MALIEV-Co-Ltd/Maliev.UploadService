@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using Maliev.UploadService.Api.Extensions;
 using Xunit;
 
@@ -104,10 +105,10 @@ public class ValidationExtensionsTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void SanitizePath_EmptyPath_ThrowsArgumentException(string path)
+    public void SanitizePath_EmptyPath_ThrowsArgumentException(string? path)
     {
         // Act & Assert
-        var ex = Assert.Throws<ArgumentException>(() => path.SanitizePath());
+        var ex = Assert.Throws<ArgumentException>(() => path!.SanitizePath());
         Assert.Contains("Path cannot be null or whitespace", ex.Message);
     }
 
@@ -278,3 +279,5 @@ public class ValidationExtensionsTests
         Assert.Equal("service/ABC123/folder/ABC123/file.txt", result);
     }
 }
+
+

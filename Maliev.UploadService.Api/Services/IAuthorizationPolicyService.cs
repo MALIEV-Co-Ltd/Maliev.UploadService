@@ -39,3 +39,4 @@ public interface IAuthorizationPolicyService
     /// </summary>
     Task<bool> HasStorageQuotaAsync(string serviceId, long fileSize, CancellationToken cancellationToken = default);
 }
+

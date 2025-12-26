@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using System.Diagnostics.Metrics;
 using Maliev.UploadService.Api.Metrics;
 using Moq;
@@ -12,14 +13,16 @@ namespace Maliev.UploadService.Tests.Unit.Metrics;
 public class UploadMetricsTests
 {
     private readonly Mock<IMeterFactory> _mockMeterFactory;
+    private readonly Mock<Microsoft.Extensions.Configuration.IConfiguration> _mockConfig;
     private readonly UploadMetrics _uploadMetrics;
 
     public UploadMetricsTests()
     {
         _mockMeterFactory = new Mock<IMeterFactory>();
+        _mockConfig = new Mock<Microsoft.Extensions.Configuration.IConfiguration>();
         var meter = new Meter("Maliev.UploadService");
         _mockMeterFactory.Setup(x => x.Create(It.IsAny<MeterOptions>())).Returns(meter);
-        _uploadMetrics = new UploadMetrics(_mockMeterFactory.Object);
+        _uploadMetrics = new UploadMetrics(_mockMeterFactory.Object, _mockConfig.Object);
     }
 
     [Fact]
@@ -155,7 +158,7 @@ public class UploadMetricsTests
     }
 
     [Fact]
-    public void ConcurrentIncrementDecrement_HandlesThreadSafety()
+    public async Task ConcurrentIncrementDecrement_HandlesThreadSafety()
     {
         // Arrange
         var tasks = new List<Task>();
@@ -167,9 +170,11 @@ public class UploadMetricsTests
             tasks.Add(Task.Run(() => _uploadMetrics.DecrementActiveUploads()));
         }
 
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks.ToArray());
 
         // Assert - no deadlocks or exceptions
         Assert.True(true);
     }
 }
+
+

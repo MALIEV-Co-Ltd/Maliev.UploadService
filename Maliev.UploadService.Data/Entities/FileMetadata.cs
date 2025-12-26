@@ -47,3 +47,4 @@ public class FileMetadata
     // Navigation properties
     public RetentionPolicy? RetentionPolicy { get; set; }
 }
+
