@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using System.Net;
 
 namespace Maliev.UploadService.Tests.Fixtures;
@@ -43,3 +44,5 @@ public class MockHttpMessageHandler : HttpMessageHandler
         return response;
     }
 }
+
+

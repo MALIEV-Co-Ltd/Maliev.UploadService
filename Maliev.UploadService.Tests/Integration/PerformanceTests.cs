@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
@@ -268,7 +269,16 @@ public class PerformanceTests : IAsyncLifetime
             new Claim(ClaimTypes.Name, serviceName),
             new Claim(JwtRegisteredClaimNames.Sub, serviceName),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim("service_id", serviceName)
+            new Claim("service_id", serviceName),
+            new Claim("permission", "upload.files.upload"),
+            new Claim("permission", "upload.files.read"),
+            new Claim("permission", "upload.files.delete"),
+            new Claim("permission", "upload.files.list"),
+            new Claim("permission", "upload.admin.manage-policies"),
+            new Claim("permission", "upload.admin.bulk-delete"),
+            new Claim("permission", "upload.admin.view-metrics"),
+            new Claim("permission", "upload.retention.configure"),
+            new Claim("permission", "upload.retention.execute")
         };
 
         var token = new JwtSecurityToken(
@@ -282,3 +292,8 @@ public class PerformanceTests : IAsyncLifetime
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
+
+
+
+
+

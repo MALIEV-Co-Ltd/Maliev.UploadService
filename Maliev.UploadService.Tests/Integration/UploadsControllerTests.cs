@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -6,6 +7,10 @@ using System.Security.Claims;
 using System.Text;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Tests.Fixtures;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Maliev.UploadService.Api.Services.Auth;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Microsoft.IdentityModel.Tokens;
 using Xunit;
 
@@ -14,18 +19,33 @@ namespace Maliev.UploadService.Tests.Integration;
 [Collection("Database")]
 public class UploadsControllerTests : IAsyncLifetime
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly WebApplicationFactory<Program> _factory;
+    private readonly TestWebApplicationFactory _baseFactory;
     private HttpClient _client = null!;
     private string _authToken = null!;
+    private readonly Mock<IIamServiceClient> _iamClientMock = new();
 
     public UploadsControllerTests(TestWebApplicationFactory factory)
     {
-        _factory = factory;
+        _baseFactory = factory;
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.AddScoped(_ => _iamClientMock.Object);
+            });
+        });
     }
 
     public async Task InitializeAsync()
     {
         _client = _factory.CreateClient();
+        
+        // Allow all IAM checks for general upload tests
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
         _authToken = GenerateJwtToken("test-service", "uploadservice");
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _authToken);
         await Task.CompletedTask;
@@ -130,20 +150,29 @@ public class UploadsControllerTests : IAsyncLifetime
 
     private string GenerateJwtToken(string serviceName, string audience)
     {
-        var claims = new[]
+        var claimsList = new List<Claim>
         {
             new Claim(ClaimTypes.Name, serviceName),
             new Claim("service_name", serviceName),
             new Claim(JwtRegisteredClaimNames.Sub, serviceName),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim("permission", "upload.files.upload"),
+            new Claim("permission", "upload.files.read"),
+            new Claim("permission", "upload.files.delete"),
+            new Claim("permission", "upload.files.list"),
+            new Claim("permission", "upload.admin.manage-policies"),
+            new Claim("permission", "upload.admin.bulk-delete"),
+            new Claim("permission", "upload.admin.view-metrics"),
+            new Claim("permission", "upload.retention.configure"),
+            new Claim("permission", "upload.retention.execute")
         };
 
         var token = new JwtSecurityToken(
-            issuer: "test-issuer",  // Match factory expectations
-            audience: "test-audience",  // Match factory expectations
-            claims: claims,
+            issuer: "test-issuer",
+            audience: "test-audience",
+            claims: claimsList,
             expires: DateTime.UtcNow.AddHours(1),
-            signingCredentials: _factory.SigningCredentials
+            signingCredentials: _baseFactory.SigningCredentials
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
@@ -441,13 +470,18 @@ public class UploadsControllerTests : IAsyncLifetime
     [Fact]
     public async Task UploadFile_WithUnauthorizedPath_ReturnsForbidden()
     {
-        // Arrange - Try to upload to a path the service doesn't have access to
+        // Arrange
         var content = new MultipartFormDataContent();
-        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes("Unauthorized content"));
+        var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes("Data"));
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
-        content.Add(fileContent, "File", "test.txt");
-        content.Add(new StringContent("other-service/uploads/test.txt"), "Path"); // Different service prefix
+        content.Add(fileContent, "File", "unauthorized.txt");
+        content.Add(new StringContent("other-service/unauthorized.txt"), "Path");
         content.Add(new StringContent("test-service"), "ServiceName");
+
+        // Explicitly deny in IAM for this test
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            "test-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         // Act
         var response = await _client.PostAsync("/upload/v1/uploads", content);
@@ -462,11 +496,16 @@ public class UploadsControllerTests : IAsyncLifetime
         // Arrange
         var request = new
         {
-            Path = "other-service/resumable/unauthorized.bin",
+            Path = "other-service/resumable.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
-            TotalSize = 100 * 1024 * 1024
+            TotalSize = 1024
         };
+
+        // Explicitly deny in IAM for this test
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            "test-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         // Act
         var response = await _client.PostAsJsonAsync("/upload/v1/uploads/resumable", request);
@@ -475,3 +514,8 @@ public class UploadsControllerTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 }
+
+
+
+
+

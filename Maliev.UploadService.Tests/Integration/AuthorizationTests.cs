@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -6,6 +7,10 @@ using System.Security.Claims;
 using System.Text;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Tests.Fixtures;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Maliev.UploadService.Api.Services.Auth;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Microsoft.IdentityModel.Tokens;
 using Xunit;
 
@@ -14,20 +19,39 @@ namespace Maliev.UploadService.Tests.Integration;
 [Collection("Database")]
 public class AuthorizationTests : IAsyncLifetime
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly WebApplicationFactory<Program> _factory;
+    private readonly TestWebApplicationFactory _baseFactory;
     private HttpClient _client = null!;
     private string _testServiceToken = null!;
     private string _otherServiceToken = null!;
     private string _uploadId = null!;
+    private readonly Mock<IIamServiceClient> _iamClientMock = new();
 
     public AuthorizationTests(TestWebApplicationFactory factory)
     {
-        _factory = factory;
+        _baseFactory = factory;
+        _factory = factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.AddScoped(_ => _iamClientMock.Object);
+            });
+        });
     }
 
     public async Task InitializeAsync()
     {
         _client = _factory.CreateClient();
+        
+        // Mock IAM to allow test-service but block other-service
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            "test-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+            
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            "other-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
         _testServiceToken = GenerateJwtToken("test-service", "uploadservice");
         _otherServiceToken = GenerateJwtToken("other-service", "uploadservice");
 
@@ -134,12 +158,15 @@ public class AuthorizationTests : IAsyncLifetime
 
     private string GenerateJwtToken(string serviceName, string audience)
     {
+        // Only include basic file operation permissions, not admin permissions
+        // This ensures the authorization handler will call IAM for permission checks
         var claims = new[]
         {
             new Claim(ClaimTypes.Name, serviceName),
             new Claim(JwtRegisteredClaimNames.Sub, serviceName),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim("service_id", serviceName)
+            new Claim("service_id", serviceName),
+            new Claim("permission", "upload.files.upload")
         };
 
         var token = new JwtSecurityToken(
@@ -147,9 +174,14 @@ public class AuthorizationTests : IAsyncLifetime
             audience: "test-audience",
             claims: claims,
             expires: DateTime.UtcNow.AddHours(1),
-            signingCredentials: _factory.SigningCredentials
+            signingCredentials: _baseFactory.SigningCredentials
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
+
+
+
+
+

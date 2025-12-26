@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using Maliev.UploadService.Data;
 using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Services;
@@ -644,3 +645,5 @@ public class LifecycleManagementServiceTests
         Assert.Equal(0, count); // No transitions defined
     }
 }
+
+

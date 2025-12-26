@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -72,6 +73,7 @@ public class DebugAuthTest
             new Claim(ClaimTypes.Name, serviceId),
             new Claim(ClaimTypes.NameIdentifier, serviceId),
             new Claim("sub", serviceId),
+            new Claim("permission", "upload.files.upload")
         };
 
         var credentials = _factory.SigningCredentials;
@@ -86,3 +88,8 @@ public class DebugAuthTest
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
+
+
+
+
+

@@ -1,10 +1,14 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using Maliev.UploadService.Data;
 using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Services;
+using Maliev.UploadService.Api.Services.Auth;
+using Maliev.UploadService.Api.Metrics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics.Metrics;
 using Moq;
 using Xunit;
 
@@ -16,16 +20,23 @@ public class AuthorizationPolicyServiceTests
     {
         var mockCache = new Mock<IDistributedCache>();
         var mockLogger = new Mock<ILogger<AuthorizationPolicyService>>();
-
+        var mockIamClient = new Mock<IIamServiceClient>();
+        
+        // Mock IMeterFactory for UploadMetrics
+        var mockMeterFactory = new Mock<IMeterFactory>();
+        
         // Create a proper configuration using ConfigurationBuilder
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["Authorization:PolicyCacheDurationMinutes"] = "60"
+                ["Authorization:PolicyCacheDurationMinutes"] = "5",
+                ["Service:Name"] = "UploadService"
             })
             .Build();
 
-        return new AuthorizationPolicyService(context, mockCache.Object, mockLogger.Object, configuration);
+        var metrics = new UploadMetrics(mockMeterFactory.Object, configuration);
+
+        return new AuthorizationPolicyService(context, mockCache.Object, mockLogger.Object, configuration, mockIamClient.Object, metrics);
     }
 
     [Fact]
@@ -544,3 +555,5 @@ public class AuthorizationPolicyServiceTests
         Assert.False(result);
     }
 }
+
+

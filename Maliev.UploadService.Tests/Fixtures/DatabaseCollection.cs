@@ -1,3 +1,4 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
 using Xunit;
 
 namespace Maliev.UploadService.Tests.Fixtures;
@@ -9,3 +10,5 @@ public class DatabaseCollection : ICollectionFixture<TestWebApplicationFactory>
     // to be the place to apply [CollectionDefinition] and all the
     // ICollectionFixture<> interfaces.
 }
+
+
