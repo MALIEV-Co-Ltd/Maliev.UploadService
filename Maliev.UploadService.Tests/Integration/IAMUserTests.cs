@@ -43,7 +43,7 @@ public class IAMUserTests : IClassFixture<TestWebApplicationFactory>
         var userId = "user-123";
         var requestedPath = "users/user-123/file-abc.pdf";
         var resourcePath = $"folders/{requestedPath}";
-        
+
         var token = GenerateJwtToken(userId, "uploadservice");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -51,7 +51,7 @@ public class IAMUserTests : IClassFixture<TestWebApplicationFactory>
         using var scope = _baseFactory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
         var uploadId = Guid.NewGuid().ToString();
-        
+
         dbContext.Uploads.Add(new Upload
         {
             UploadId = uploadId,
@@ -100,7 +100,7 @@ public class IAMUserTests : IClassFixture<TestWebApplicationFactory>
         var userId = "user-123";
         var requestedPath = "users/other-user/secret.pdf";
         var resourcePath = $"folders/{requestedPath}";
-        
+
         var token = GenerateJwtToken(userId, "uploadservice");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 

@@ -38,7 +38,7 @@ public class IAMAdminTests : IClassFixture<TestWebApplicationFactory>
         // Arrange
         var client = _factory.CreateClient();
         var adminId = "admin-user";
-        
+
         var token = GenerateJwtToken(adminId, "uploadservice", isAdmin: true);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -62,7 +62,7 @@ public class IAMAdminTests : IClassFixture<TestWebApplicationFactory>
         // Arrange
         var client = _factory.CreateClient();
         var userId = "standard-user";
-        
+
         var token = GenerateJwtToken(userId, "uploadservice", isAdmin: false);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 

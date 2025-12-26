@@ -209,7 +209,7 @@ public class AdminControllerTests : IAsyncLifetime
 
         var createResponse = await _client.PostAsJsonAsync("/upload/v1/admin/bulk-delete", createRequest);
         Assert.Equal(HttpStatusCode.Accepted, createResponse.StatusCode);
-        
+
         var createResult = await createResponse.Content.ReadFromJsonAsync<BulkDeleteJobResponse>();
         var jobId = createResult!.JobId;
 

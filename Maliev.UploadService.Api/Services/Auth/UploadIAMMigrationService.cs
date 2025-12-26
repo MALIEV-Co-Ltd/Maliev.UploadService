@@ -55,7 +55,7 @@ public class UploadIAMMigrationService
                     var resourcePath = $"folders/{prefix.Trim('/')}/**";
                     if (string.IsNullOrEmpty(prefix) || prefix == "/") resourcePath = "folders/**";
 
-                    _logger.LogInformation("Creating IAM bindings for {ServiceId} on {ResourcePath}", 
+                    _logger.LogInformation("Creating IAM bindings for {ServiceId} on {ResourcePath}",
                         policy.ServiceId, resourcePath);
 
                     // These would be real calls to IAM Service in a production implementation

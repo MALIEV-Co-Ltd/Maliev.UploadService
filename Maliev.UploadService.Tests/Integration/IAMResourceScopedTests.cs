@@ -41,7 +41,7 @@ public class IAMResourceScopedTests : IClassFixture<TestWebApplicationFactory>
         var serviceName = "InvoiceService";
         var requestedPath = "invoices/2025/inv1.pdf";
         var resourcePath = $"folders/{requestedPath}";
-        
+
         var token = GenerateJwtToken(serviceName, "uploadservice");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -74,7 +74,7 @@ public class IAMResourceScopedTests : IClassFixture<TestWebApplicationFactory>
         var serviceName = "InvoiceService";
         var requestedPath = "orders/2025/ord1.pdf";
         var resourcePath = $"folders/{requestedPath}";
-        
+
         var token = GenerateJwtToken(serviceName, "uploadservice");
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
@@ -86,7 +86,7 @@ public class IAMResourceScopedTests : IClassFixture<TestWebApplicationFactory>
             .ReturnsAsync(false);
 
         // Also ensure legacy doesn't allow it (mocking empty DB/policies)
-        
+
         var content = new MultipartFormDataContent();
         content.Add(new StringContent(serviceName), "ServiceName");
         content.Add(new StringContent(requestedPath), "Path");

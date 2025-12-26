@@ -95,7 +95,7 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
 
         // Check if path matches any allowed prefix
         var authorized = policy.AllowedPathPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
-        
+
         if (!authorized)
         {
             _metrics.RecordAuthFailure(UploadPermissions.FilesUpload, resourcePath, "LegacyDenial");

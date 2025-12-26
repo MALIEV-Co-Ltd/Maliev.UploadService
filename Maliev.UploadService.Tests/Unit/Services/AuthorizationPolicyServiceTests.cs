@@ -21,10 +21,10 @@ public class AuthorizationPolicyServiceTests
         var mockCache = new Mock<IDistributedCache>();
         var mockLogger = new Mock<ILogger<AuthorizationPolicyService>>();
         var mockIamClient = new Mock<IIamServiceClient>();
-        
+
         // Mock IMeterFactory for UploadMetrics
         var mockMeterFactory = new Mock<IMeterFactory>();
-        
+
         // Create a proper configuration using ConfigurationBuilder
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>

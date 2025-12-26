@@ -41,7 +41,7 @@ public class FilesControllerTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _client = _factory.CreateClient();
-        
+
         // Allow all IAM checks for files management tests
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))

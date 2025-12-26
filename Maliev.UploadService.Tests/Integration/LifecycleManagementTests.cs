@@ -47,7 +47,7 @@ public class LifecycleManagementTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _client = _factory.CreateClient();
-        
+
         // Allow IAM checks for lifecycle tests
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))

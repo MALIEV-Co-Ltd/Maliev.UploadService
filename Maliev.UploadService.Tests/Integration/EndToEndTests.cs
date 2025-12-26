@@ -43,7 +43,7 @@ public class EndToEndTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _client = _factory.CreateClient();
-        
+
         // Allow all IAM checks for E2E tests
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -254,7 +254,7 @@ public class EndToEndTests : IAsyncLifetime
 
         // ==================== SERVICE B TRIES TO ACCESS SERVICE A'S FILE ====================
         // Should be blocked by authorization
-        
+
         // Mock IAM to deny service-b access to service-a's folders
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "service-b", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))

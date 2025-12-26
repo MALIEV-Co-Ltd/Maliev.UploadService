@@ -25,7 +25,7 @@ public class AuthPerformanceTests
     {
         var configMock = new Mock<IConfiguration>();
         configMock.Setup(x => x["Service:Name"]).Returns("UploadService");
-        
+
         var meterFactoryMock = new Mock<IMeterFactory>();
         meterFactoryMock.Setup(x => x.Create(It.IsAny<MeterOptions>()))
             .Returns(new Meter("test"));

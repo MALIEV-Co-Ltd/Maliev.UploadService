@@ -32,11 +32,11 @@ public class UploadIAMRegistrationService
 
             // Permission definitions would be sent to IAM Service here
             // e.g., await _iamClient.DefinePermissionAsync(UploadPermissions.FilesUpload, "Upload files", cancellationToken);
-            
+
             _logger.LogInformation("Successfully registered {Count} permissions", 9);
 
             _logger.LogInformation("Starting IAM role registration...");
-            
+
             // Role definitions would be sent to IAM Service here
             // e.g., await _iamClient.DefineRoleAsync(UploadPredefinedRoles.Admin, new[] { "upload.*" }, cancellationToken);
 

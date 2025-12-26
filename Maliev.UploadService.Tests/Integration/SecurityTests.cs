@@ -343,7 +343,7 @@ public class SecurityTests : IAsyncLifetime
         // token is for "test-service", but request says "other-service"
         // The controller uses the name from request if provided, or from token.
         // In our case it uses "other-service".
-        
+
         // IAM check will be for principal "test-service" (from token) but resource "folders/other-service/..."
         _iamClientMock.Reset();
         _iamClientMock.Setup(x => x.CheckPermissionAsync(

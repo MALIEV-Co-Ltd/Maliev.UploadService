@@ -42,12 +42,12 @@ public class AuthorizationTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _client = _factory.CreateClient();
-        
+
         // Mock IAM to allow test-service but block other-service
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "test-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
-            
+
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "other-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);

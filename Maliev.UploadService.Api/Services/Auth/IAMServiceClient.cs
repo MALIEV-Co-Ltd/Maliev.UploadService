@@ -34,7 +34,7 @@ public class IamServiceClient : IIamServiceClient
     public async Task<bool> CheckPermissionAsync(string principalId, string permission, string? resourcePath = null, CancellationToken cancellationToken = default)
     {
         var cacheKey = $"iam_perm:{principalId}:{permission}:{resourcePath ?? "root"}";
-        
+
         try
         {
             // Try cache first
@@ -66,7 +66,7 @@ public class IamServiceClient : IIamServiceClient
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to check permission {Permission} for resource {ResourcePath} via IAM Service", 
+            _logger.LogError(ex, "Failed to check permission {Permission} for resource {ResourcePath} via IAM Service",
                 permission, resourcePath);
             return false;
         }

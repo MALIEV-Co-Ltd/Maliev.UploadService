@@ -34,7 +34,7 @@ public class UploadMetrics
         ArgumentNullException.ThrowIfNull(configuration);
 
         var serviceName = configuration["Service:Name"] ?? "UploadService";
-        _meter = meterFactory.Create($"{serviceName.ToLower()}-meter") 
+        _meter = meterFactory.Create($"{serviceName.ToLower()}-meter")
                  ?? new Meter($"{serviceName.ToLower()}-meter");
 
         _defaultTags = new[]
