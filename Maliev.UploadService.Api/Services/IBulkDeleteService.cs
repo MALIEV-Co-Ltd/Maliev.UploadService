@@ -23,3 +23,4 @@ public interface IBulkDeleteService
         string jobId,
         CancellationToken cancellationToken = default);
 }
+

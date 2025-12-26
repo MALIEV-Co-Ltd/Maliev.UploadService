@@ -24,3 +24,4 @@ public class ResumeUploadResponse
     /// </summary>
     public string? NextByteRange { get; set; }
 }
+

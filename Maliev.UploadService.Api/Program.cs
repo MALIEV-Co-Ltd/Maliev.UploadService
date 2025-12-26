@@ -1,6 +1,5 @@
 using Maliev.UploadService.Api.BackgroundServices;
 using Maliev.UploadService.Api.Metrics;
-using Maliev.UploadService.Api.Middleware;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Data;
 using MassTransit;
@@ -14,6 +13,10 @@ builder.AddGoogleSecretManagerVolume(); // Load secrets from /mnt/secrets if ava
 
 // --- Infrastructure & Observability ---
 builder.AddServiceDefaults(); // OpenTelemetry, health checks, resilience
+builder.AddStandardMiddleware(options =>
+{
+    options.EnableRequestLogging = true;
+});
 builder.AddServiceMeters("uploads-meter"); // Register service meters for OpenTelemetry business metrics
 
 // JWT Authentication (tests override via PostConfigureAll with dynamic RSA keys)
@@ -28,17 +31,9 @@ builder.AddDefaultApiVersioning(); // API versioning with URL segment reader
 // Add OpenAPI (must be in Program.cs for XML comments to work via source generator)
 if (!builder.Environment.IsProduction())
 {
-    builder.Services.AddEndpointsApiExplorer();
-    builder.Services.AddOpenApi("v1", options =>
-    {
-        options.AddDocumentTransformer((document, context, cancellationToken) =>
-        {
-            document.Info.Title = "MALIEV Upload Service API";
-            document.Info.Version = "v1";
-            document.Info.Description = "Centralized file upload and storage service for the Maliev platform. Provides secure file upload with validation, lifecycle management, signed URLs for access control, and async event notifications.";
-            return Task.CompletedTask;
-        });
-    });
+    builder.AddStandardOpenApi(
+        title: "MALIEV Upload Service API",
+        description: "Centralized file upload and storage service for the Maliev platform. Provides secure file upload with validation, lifecycle management, signed URLs for access control, and async event notifications.");
 }
 
 // T150: Configure FormOptions for large file handling (FR-023)
@@ -68,7 +63,7 @@ builder.Services.AddControllers()
 
 // --- Infrastructure (Use ServiceDefaults extensions) ---
 // Database: Connects + sets up Retry Policy + Health Check
-builder.AddPostgresDbContext<UploadDbContext>(connectionStringName: "UploadDbContext");
+builder.AddPostgresDbContext<UploadDbContext>("UploadDbContext", true, (Action<IServiceProvider, DbContextOptionsBuilder>?)null);
 
 // Cache: Connects + sets up Health Check
 builder.AddRedisDistributedCache(instanceName: "upload:");
@@ -86,6 +81,10 @@ builder.AddMassTransitWithRabbitMq(configurator =>
 
 // Add services
 builder.Services.AddScoped<IAuthorizationPolicyService, AuthorizationPolicyService>();
+
+// IAM Services
+builder.AddServiceClient<Maliev.Aspire.ServiceDefaults.IAM.IIamServiceClient, Maliev.UploadService.Api.Services.Auth.IamServiceClient>("IAM");
+builder.Services.AddScoped<Maliev.UploadService.Api.Services.Auth.UploadIAMRegistrationService>();
 
 // T082: Register FileValidationService and GcsStorageService
 builder.Services.AddScoped<IValidationService, FileValidationService>();
@@ -145,8 +144,7 @@ if (!app.Environment.IsEnvironment("Testing"))
 }
 
 // --- Middleware Pipeline ---
-app.UseMiddleware<CorrelationIdMiddleware>();
-app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseStandardMiddleware();
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseCors();
@@ -166,3 +164,4 @@ await app.RunAsync();
 /// Main program class for the application
 /// </summary>
 public partial class Program { }
+

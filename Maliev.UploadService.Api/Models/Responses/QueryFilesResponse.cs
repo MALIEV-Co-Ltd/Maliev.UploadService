@@ -8,3 +8,4 @@ public class QueryFilesResponse
     public int PageSize { get; set; }
     public int TotalPages { get; set; }
 }
+

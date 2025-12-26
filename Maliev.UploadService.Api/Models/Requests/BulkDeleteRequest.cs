@@ -21,3 +21,4 @@ public class BulkDeleteRequest
     [MaxLength(500)]
     public string? Reason { get; set; }
 }
+

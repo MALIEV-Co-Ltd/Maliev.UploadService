@@ -16,3 +16,4 @@ public class ValidationResult
     public List<string> Errors { get; set; } = new();
     public string? DetectedContentType { get; set; }
 }
+

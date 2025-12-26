@@ -21,3 +21,4 @@ public class BulkDeleteJobResponse
 
     public List<string>? Errors { get; set; }
 }
+

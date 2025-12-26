@@ -21,3 +21,4 @@ public class QueryFilesRequest
     [Range(1, 100)]
     public int PageSize { get; set; } = 20;
 }
+

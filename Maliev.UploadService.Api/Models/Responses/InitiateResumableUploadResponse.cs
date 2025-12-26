@@ -13,3 +13,4 @@ public class InitiateResumableUploadResponse
 
     public required long TotalSize { get; set; }
 }
+

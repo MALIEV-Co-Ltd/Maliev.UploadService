@@ -47,3 +47,4 @@ public interface ILifecycleManagementService
     /// <returns>Number of files updated</returns>
     Task<int> UpdateStorageClassesAsync(CancellationToken cancellationToken = default);
 }
+
