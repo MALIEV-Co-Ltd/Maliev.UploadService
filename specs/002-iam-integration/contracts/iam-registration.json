@@ -1,0 +1,32 @@
+{
+  "serviceName": "Maliev.UploadService",
+  "permissions": [
+    { "name": "upload.files.upload", "description": "Upload files" },
+    { "name": "upload.files.read", "description": "Read files" },
+    { "name": "upload.files.delete", "description": "Delete files" },
+    { "name": "upload.files.list", "description": "List files" },
+    { "name": "upload.admin.manage-policies", "description": "Manage policies" },
+    { "name": "upload.admin.bulk-delete", "description": "Bulk delete" },
+    { "name": "upload.admin.view-metrics", "description": "View metrics" },
+    { "name": "upload.retention.configure", "description": "Configure retention" },
+    { "name": "upload.retention.execute", "description": "Execute retention" },
+    { "name": "upload.invoice-files.upload", "description": "Upload invoices" },
+    { "name": "upload.order-files.upload", "description": "Upload orders" },
+    { "name": "upload.receipt-files.upload", "description": "Upload receipts" }
+  ],
+  "roles": [
+    {
+      "name": "upload-admin",
+      "permissions": ["upload.*"]
+    },
+    {
+      "name": "upload-manager",
+      "permissions": [
+        "upload.files.*",
+        "upload.admin.manage-policies",
+        "upload.admin.view-metrics",
+        "upload.retention.configure"
+      ]
+    }
+  ]
+}
