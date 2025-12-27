@@ -136,11 +136,7 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Service:Name"] = "UploadService",
-                ["Service:Version"] = "1.0.0-test",
-                // Enable permission-based authorization for tests
-                ["Features:PermissionBasedAuthEnabled"] = "true",
-                // Enable resource-scoped auth to force IAM checks (not just JWT)
-                ["Features:ResourceScopedAuthEnabled"] = "true"
+                ["Service:Version"] = "1.0.0-test"
             });
         });
 
@@ -341,6 +337,18 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
         string[]? roles = null,
         Dictionary<string, string>? additionalClaims = null)
     {
+        return CreateTestJwtToken(userId, roles, null, additionalClaims);
+    }
+
+    /// <summary>
+    /// Creates a test JWT token with support for multi-value claims like permissions.
+    /// </summary>
+    public string CreateTestJwtToken(
+        string userId,
+        string[]? roles,
+        string[]? permissions,
+        Dictionary<string, string>? additionalClaims = null)
+    {
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, userId),
@@ -352,6 +360,14 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
             foreach (var role in roles)
             {
                 claims.Add(new Claim("role", role));
+            }
+        }
+
+        if (permissions != null)
+        {
+            foreach (var permission in permissions)
+            {
+                claims.Add(new Claim("permissions", permission));
             }
         }
 
@@ -387,11 +403,11 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
     }
 
     /// <summary>
-    /// Creates an HTTP client with authenticated user and specified roles.
+    /// Creates an HTTP client with authenticated user and specified roles and permissions.
     /// </summary>
-    public HttpClient CreateAuthenticatedClient(string userId = "test-user", string[]? roles = null)
+    public HttpClient CreateAuthenticatedClient(string userId = "test-user", string[]? roles = null, string[]? permissions = null)
     {
-        var token = CreateTestJwtToken(userId, roles);
+        var token = CreateTestJwtToken(userId, roles, permissions);
         var client = CreateClient();
         client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
         return client;
