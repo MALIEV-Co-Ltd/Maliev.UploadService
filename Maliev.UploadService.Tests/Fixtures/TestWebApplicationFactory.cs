@@ -4,6 +4,7 @@ using Maliev.UploadService.Data;
 using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Tests.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using System.Diagnostics.CodeAnalysis;
 using Moq;
 using nClam;
 
@@ -17,10 +18,6 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
 
         // Add permission-based authorization infrastructure for tests
         services.AddHttpContextAccessor();
-#pragma warning disable ASPDEPR006
-        services.AddSingleton<Microsoft.AspNetCore.Mvc.Infrastructure.IActionContextAccessor,
-                              Microsoft.AspNetCore.Mvc.Infrastructure.ActionContextAccessor>();
-#pragma warning restore ASPDEPR006
         services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider,
                               Maliev.Aspire.ServiceDefaults.Authorization.PermissionAuthorizationPolicyProvider>();
         services.AddScoped<Microsoft.AspNetCore.Authorization.IAuthorizationHandler,

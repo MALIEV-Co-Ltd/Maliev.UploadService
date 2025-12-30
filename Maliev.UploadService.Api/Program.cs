@@ -122,26 +122,7 @@ var app = builder.Build();
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
 // --- Database Migrations ---
-if (!app.Environment.IsEnvironment("Testing"))
-{
-    try
-    {
-        await app.MigrateDatabaseAsync<UploadDbContext>();
-
-        // Seed sample data in Development environment
-        using var scope = app.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
-        await Maliev.UploadService.Api.Data.SeedData.SeedSamplePoliciesAsync(
-            dbContext,
-            logger,
-            app.Environment.IsDevelopment());
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Database migration failed - application may not function correctly");
-        // Don't throw - allow app to start for debugging
-    }
-}
+await app.MigrateDatabaseAsync<UploadDbContext>();
 
 // --- Middleware Pipeline ---
 app.UseStandardMiddleware();

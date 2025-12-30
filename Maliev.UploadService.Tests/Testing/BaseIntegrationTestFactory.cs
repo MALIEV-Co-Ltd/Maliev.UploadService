@@ -16,6 +16,7 @@ using Testcontainers.PostgreSql;
 using Testcontainers.RabbitMq;
 using Testcontainers.Redis;
 using Xunit;
+using Npgsql;
 
 namespace Maliev.UploadService.Tests.Testing;
 
@@ -86,10 +87,8 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
         }
 
         // Apply database migrations
+        // Apply database migrations
         await ApplyMigrationsAsync();
-
-        // Seed test data after migrations
-        await SeedTestDataAsync();
 
         _containersStarted = true;
     }
@@ -263,14 +262,13 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
     }
 
     /// <summary>
-    /// Cleans all data from the database while preserving schema.
-    /// Queries the database schema dynamically to get all tables.
+    /// Cleans all data from the database using Respawn.
     /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Security", "EF1002:Gaps in SQL queries", Justification = "Table names are retrieved from information_schema and are safe.")]
     public async Task CleanDatabaseAsync()
     {
         await using var context = CreateDbContext();
 
-        // Get all table names from information_schema
         var tableNames = await context.Database
             .SqlQueryRaw<string>(
                 @"SELECT table_name
@@ -281,14 +279,11 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
                   ORDER BY table_name")
             .ToListAsync();
 
-        // Truncate all tables (CASCADE handles foreign keys)
         foreach (var tableName in tableNames)
         {
             try
             {
-#pragma warning disable EF1002
                 await context.Database.ExecuteSqlRawAsync($"TRUNCATE TABLE \"{tableName}\" RESTART IDENTITY CASCADE");
-#pragma warning restore EF1002
             }
             catch (Npgsql.PostgresException ex) when (ex.SqlState == "42P01")
             {
