@@ -68,3 +68,5 @@ nunit-*.xml
 *test-output.txt
 *_error.txt
 
+*.log
+temp_test_results.txt

@@ -85,6 +85,7 @@ public class FilesControllerTests : IAsyncLifetime
         }
 
         _client?.Dispose();
+        await _factory.DisposeAsync();
     }
 
     [Fact]

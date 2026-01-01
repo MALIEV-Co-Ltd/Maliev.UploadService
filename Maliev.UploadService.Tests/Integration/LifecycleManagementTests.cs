@@ -82,10 +82,10 @@ public class LifecycleManagementTests : IAsyncLifetime
         _retentionPolicyId = retentionPolicy.PolicyId;
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
-        return Task.CompletedTask;
+        await _factory.DisposeAsync();
     }
 
     /// <summary>

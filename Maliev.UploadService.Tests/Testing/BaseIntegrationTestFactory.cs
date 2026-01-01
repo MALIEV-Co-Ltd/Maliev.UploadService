@@ -30,11 +30,9 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
     where TProgram : class
     where TDbContext : DbContext
 {
-    private readonly PostgreSqlContainer _postgresContainer;
-    private readonly RedisContainer _redisContainer;
-    private readonly RabbitMqContainer _rabbitmqContainer;
     private readonly RSA _testRsa;
-    private bool _containersStarted;
+    private static readonly SemaphoreSlim _seedLock = new(1, 1);
+    private static bool _dataSeeded;
 
     /// <summary>
     /// Override this property if your DbContext connection string has a different name.
@@ -44,62 +42,29 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
 
     public BaseIntegrationTestFactory()
     {
-        _postgresContainer = new PostgreSqlBuilder()
-            .WithImage("postgres:18-alpine")
-            .Build();
-
-        _redisContainer = new RedisBuilder()
-            .WithImage("redis:7-alpine")
-            .Build();
-
-        _rabbitmqContainer = new RabbitMqBuilder()
-            .WithImage("rabbitmq:4.2.1-alpine")
-            .Build();
-
-        _testRsa = RSA.Create(2048);
-
-        // Set environment variable EARLY so Program.cs picks it up during WebApplication.CreateBuilder
+        _testRsa = RSA.Create();
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Testing");
     }
 
-    public async Task InitializeAsync()
+    public virtual async Task InitializeAsync()
     {
-        if (_containersStarted)
-            return;
+        await TestContainerFixture.InitializeAsync();
 
-        // Start all containers in parallel
-        await Task.WhenAll(
-            _postgresContainer.StartAsync(),
-            _redisContainer.StartAsync(),
-            _rabbitmqContainer.StartAsync()
-        );
-
-        // Set environment variables immediately after containers start
-        // This ensures they are available when Program.Main runs (which happens when .Server is accessed)
-        Environment.SetEnvironmentVariable($"ConnectionStrings__{DbConnectionStringName}", _postgresContainer.GetConnectionString());
-        Environment.SetEnvironmentVariable("ConnectionStrings__redis", _redisContainer.GetConnectionString());
-        Environment.SetEnvironmentVariable("ConnectionStrings__rabbitmq", _rabbitmqContainer.GetConnectionString());
+        // Set environment variables from the shared containers
+        Environment.SetEnvironmentVariable($"ConnectionStrings__{DbConnectionStringName}", TestContainerFixture.PostgresContainer.GetConnectionString());
+        Environment.SetEnvironmentVariable("ConnectionStrings__redis", TestContainerFixture.RedisContainer.GetConnectionString());
+        Environment.SetEnvironmentVariable("ConnectionStrings__rabbitmq", TestContainerFixture.RabbitMqContainer.GetConnectionString());
 
         // Wait for Redis to be ready
-        using (var connection = await StackExchange.Redis.ConnectionMultiplexer.ConnectAsync(_redisContainer.GetConnectionString()))
+        using (var connection = await StackExchange.Redis.ConnectionMultiplexer.ConnectAsync(TestContainerFixture.RedisContainer.GetConnectionString()))
         {
             await connection.GetDatabase().PingAsync();
         }
-
-        // Apply database migrations
-        // Apply database migrations
-        await ApplyMigrationsAsync();
-
-        _containersStarted = true;
     }
 
     public new async Task DisposeAsync()
     {
-        await _postgresContainer.DisposeAsync();
-        await _redisContainer.DisposeAsync();
-        await _rabbitmqContainer.DisposeAsync();
         _testRsa.Dispose();
-        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", null); // Cleanup
         await base.DisposeAsync();
     }
 
@@ -107,10 +72,7 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
     protected override IHost CreateHost(IHostBuilder builder)
     {
         // Ensure containers are started before creating host
-        if (!_containersStarted)
-        {
-            InitializeAsync().GetAwaiter().GetResult();
-        }
+        InitializeAsync().GetAwaiter().GetResult();
 
         // Set environment variables BEFORE host builder processes configuration
         // Note: Connection strings are now injected via ConfigureAppConfiguration in ConfigureWebHost
@@ -125,15 +87,49 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
         // Allow derived classes to set additional environment variables
         ConfigureEnvironmentVariables();
 
-        return base.CreateHost(builder);
+        var host = base.CreateHost(builder);
+
+        // Apply database migrations and seed test data exactly once
+        EnsureDatabaseInitialized(host);
+
+        return host;
+    }
+
+    private void EnsureDatabaseInitialized(IHost host)
+    {
+        if (_dataSeeded) return;
+
+        _seedLock.Wait();
+        try
+        {
+            if (_dataSeeded) return;
+
+            // migrations are handled by Program.cs (MigrateDatabaseAsync extension)
+            // but we still need to seed test data exactly once.
+            SeedTestDataAsync().GetAwaiter().GetResult();
+            _dataSeeded = true;
+        }
+        finally
+        {
+            _seedLock.Release();
+        }
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Use UseSetting for absolute priority and propagation in delegated factories
+        builder.UseSetting($"ConnectionStrings:{DbConnectionStringName}", TestContainerFixture.PostgresContainer.GetConnectionString());
+        builder.UseSetting("ConnectionStrings:redis", TestContainerFixture.RedisContainer.GetConnectionString());
+        builder.UseSetting("ConnectionStrings:rabbitmq", TestContainerFixture.RabbitMqContainer.GetConnectionString());
+
+        // Also inject via ConfigureAppConfiguration to ensure it's available in IConfiguration
         builder.ConfigureAppConfiguration((context, config) =>
         {
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                [$"ConnectionStrings:{DbConnectionStringName}"] = TestContainerFixture.PostgresContainer.GetConnectionString(),
+                ["ConnectionStrings:redis"] = TestContainerFixture.RedisContainer.GetConnectionString(),
+                ["ConnectionStrings:rabbitmq"] = TestContainerFixture.RabbitMqContainer.GetConnectionString(),
                 ["Service:Name"] = "UploadService",
                 ["Service:Version"] = "1.0.0-test"
             });
@@ -195,13 +191,6 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
                 options.TokenValidationParameters.SignatureValidator = null;
             });
 
-            // Ensure MassTransit waits until started for tests to avoid race conditions
-            services.Configure<MassTransitHostOptions>(options =>
-            {
-                options.WaitUntilStarted = true;
-                options.StartTimeout = TimeSpan.FromSeconds(30);
-            });
-
             // Allow derived classes to add additional test services
             ConfigureAdditionalServices(services);
         });
@@ -238,7 +227,7 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
     /// </summary>
     public TDbContext CreateDbContext()
     {
-        var connectionString = _postgresContainer.GetConnectionString();
+        var connectionString = TestContainerFixture.PostgresContainer.GetConnectionString();
         var optionsBuilder = new DbContextOptionsBuilder<TDbContext>();
         optionsBuilder.UseNpgsql(connectionString);
         return (TDbContext)Activator.CreateInstance(typeof(TDbContext), optionsBuilder.Options)!;
@@ -249,8 +238,8 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
     /// </summary>
     private async Task ApplyMigrationsAsync()
     {
-        await using var context = CreateDbContext();
-        await context.Database.MigrateAsync();
+        // This method is now redundant as logic moved to CreateHost
+        await Task.CompletedTask;
     }
 
     /// <summary>

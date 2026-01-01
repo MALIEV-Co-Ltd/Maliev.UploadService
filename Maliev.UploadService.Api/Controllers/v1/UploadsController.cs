@@ -512,12 +512,16 @@ public class UploadsController : ControllerBase
         string eventTypeString,
         CancellationToken cancellationToken)
     {
+        // T113: Sanitize input strings for database (specifically handle null bytes for Postgres)
+        serviceName = serviceName?.Replace("\0", "[NULL]") ?? "unknown";
+        path = path?.Replace("\0", "[NULL]") ?? "";
+
         var eventType = eventTypeString switch
         {
             "Success" => UploadEventType.UploadCompleted,
             "Failed" => UploadEventType.UploadFailed,
             "ValidationFailed" => UploadEventType.ValidationFailed,
-            "Unauthorized" => UploadEventType.AuthorizationDenied,
+            "PathTraversalAttempt" or "Unauthorized" => UploadEventType.AuthorizationDenied,
             _ => UploadEventType.UploadInitiated
         };
 

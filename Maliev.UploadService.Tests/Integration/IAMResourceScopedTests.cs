@@ -14,7 +14,8 @@ using Xunit;
 
 namespace Maliev.UploadService.Tests.Integration;
 
-public class IAMResourceScopedTests : IClassFixture<TestWebApplicationFactory>
+[Collection("Database")]
+public class IAMResourceScopedTests : IAsyncLifetime
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly TestWebApplicationFactory _baseFactory;
@@ -31,6 +32,13 @@ public class IAMResourceScopedTests : IClassFixture<TestWebApplicationFactory>
                 services.AddScoped(_ => _iamClientMock.Object);
             });
         });
+    }
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
+    {
+        await _factory.DisposeAsync();
     }
 
     [Fact]

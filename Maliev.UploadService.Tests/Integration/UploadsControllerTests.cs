@@ -51,10 +51,10 @@ public class UploadsControllerTests : IAsyncLifetime
         await Task.CompletedTask;
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
-        return Task.CompletedTask;
+        await _factory.DisposeAsync();
     }
 
     [Fact]

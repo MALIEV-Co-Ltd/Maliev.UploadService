@@ -5,6 +5,7 @@ using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Tests.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.EntityFrameworkCore;
 using Moq;
 using nClam;
 
@@ -162,6 +163,12 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
     {
         // Seed authorization policies for test services
         await using var context = CreateDbContext();
+
+        // Ensure idempotency: only seed if the table is empty
+        if (await context.ServiceAuthorizationPolicies.AnyAsync())
+        {
+            return;
+        }
 
         var policies = new[]
         {

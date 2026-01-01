@@ -69,12 +69,12 @@ public class AuthorizationTests : IAsyncLifetime
         _uploadId = uploadResult!.UploadId;
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
         // Don't delete the file here - all tests in this class use the same upload
         // The file will be cleaned up when the test database is torn down
         _client?.Dispose();
-        return Task.CompletedTask;
+        await _factory.DisposeAsync();
     }
 
     [Fact]

@@ -89,11 +89,19 @@ public class SecurityTests : IAsyncLifetime
         // Cleanup: Delete the test file
         if (!string.IsNullOrEmpty(_service1UploadId))
         {
-            await _client.DeleteAsync($"/upload/v1/files/{_service1UploadId}");
+            try
+            {
+                await _client.DeleteAsync($"/upload/v1/files/{_service1UploadId}");
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
         }
 
         _client?.Dispose();
         _unauthenticatedClient?.Dispose();
+        await _factory.DisposeAsync();
     }
 
     [Fact]

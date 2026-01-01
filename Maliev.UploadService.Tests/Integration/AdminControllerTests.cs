@@ -97,10 +97,10 @@ public class AdminControllerTests : IAsyncLifetime
         }
     }
 
-    public Task DisposeAsync()
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
-        return Task.CompletedTask;
+        await _factory.DisposeAsync();
     }
 
     [Fact]
