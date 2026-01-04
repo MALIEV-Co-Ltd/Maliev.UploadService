@@ -1,6 +1,5 @@
 using Asp.Versioning;
 using Maliev.UploadService.Data;
-using Maliev.UploadService.Api.Events;
 using Maliev.UploadService.Api.Extensions;
 using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Models.Requests;
@@ -8,6 +7,7 @@ using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
 using Maliev.Aspire.ServiceDefaults.Authorization;
+using Maliev.MessagingContracts.Generated;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -339,16 +339,27 @@ public class FilesController : ControllerBase
             uploadId, serviceId, fileMetadata.StoragePath);
 
         // T160: Publish FileDeletedEvent (FR-025)
-        await _publishEndpoint.Publish(new FileDeletedEvent
-        {
-            FileId = fileMetadata.FileId,
-            UploadId = uploadId,
-            ServiceId = serviceId,
-            StoragePath = fileMetadata.StoragePath,
-            DeletedAt = DateTime.UtcNow,
-            DeletedBy = serviceId,
-            Reason = "User requested deletion"
-        }, cancellationToken);
+        await _publishEndpoint.Publish(new FileDeletedEvent(
+            MessageId: Guid.NewGuid(),
+            MessageName: "FileDeletedEvent",
+            MessageType: MessageType.Event,
+            MessageVersion: "1.0.0",
+            PublishedBy: "UploadService",
+            ConsumedBy: ["NotificationService"],
+            CorrelationId: Guid.NewGuid(),
+            CausationId: null,
+            OccurredAtUtc: DateTimeOffset.UtcNow,
+            IsPublic: false,
+            Payload: new FileDeletedEventPayload(
+                FileId: fileMetadata.FileId,
+                UploadId: uploadId,
+                ServiceId: serviceId,
+                StoragePath: fileMetadata.StoragePath,
+                DeletedAt: DateTimeOffset.UtcNow,
+                DeletedBy: serviceId,
+                Reason: "User requested deletion"
+            )
+        ), cancellationToken);
 
         return NoContent();
     }

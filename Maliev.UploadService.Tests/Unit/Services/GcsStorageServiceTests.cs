@@ -46,7 +46,8 @@ public class GcsStorageServiceTests
                 Size = 17
             });
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
         var content = System.Text.Encoding.UTF8.GetBytes("Test file content");
         using var stream = new MemoryStream(content);
 
@@ -69,7 +70,8 @@ public class GcsStorageServiceTests
     {
         // Arrange
         var mockClient = new Mock<StorageClient>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Simulate file already exists
         mockClient
@@ -92,7 +94,8 @@ public class GcsStorageServiceTests
     {
         // Arrange
         var mockClient = new Mock<StorageClient>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Create a large stream (10MB) that we'll monitor
         var largeFileSize = 10 * 1024 * 1024;
@@ -156,7 +159,8 @@ public class GcsStorageServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new Google.Apis.Storage.v1.Data.Object { Name = "test.txt" });
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Act
         var exists = await service.FileExistsAsync("test.txt");
@@ -178,7 +182,8 @@ public class GcsStorageServiceTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Google.GoogleApiException("Not Found"));
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Act
         var exists = await service.FileExistsAsync("nonexistent.txt");
@@ -236,7 +241,8 @@ public class GcsStorageServiceTests
                 Size = 20
             });
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
         var content = System.Text.Encoding.UTF8.GetBytes("New content");
         using var stream = new MemoryStream(content);
 
@@ -282,7 +288,8 @@ public class GcsStorageServiceTests
                 Size = 100
             });
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
         var content = System.Text.Encoding.UTF8.GetBytes("New content");
         using var stream = new MemoryStream(content);
 
@@ -311,7 +318,8 @@ public class GcsStorageServiceTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Act
         await service.DeleteFileAsync("test-service/uploads/test.txt");
@@ -345,7 +353,8 @@ public class GcsStorageServiceTests
                 ETag = "etag123"
             });
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Act
         var metadata = await service.GetFileMetadataAsync("test.txt");
@@ -375,7 +384,8 @@ public class GcsStorageServiceTests
                 HttpStatusCode = System.Net.HttpStatusCode.NotFound
             });
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Act
         var metadata = await service.GetFileMetadataAsync("nonexistent.txt");
@@ -405,7 +415,8 @@ public class GcsStorageServiceTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(exception);
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Act
         var metadata = await service.GetFileMetadataAsync("nonexistent.txt");
@@ -434,7 +445,8 @@ public class GcsStorageServiceTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(exception);
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Act
         var exists = await service.FileExistsAsync("nonexistent.txt");
@@ -456,7 +468,8 @@ public class GcsStorageServiceTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Google.GoogleApiException("GCS", "Resource Not Found"));
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Act
         var exists = await service.FileExistsAsync("nonexistent.txt");
@@ -478,7 +491,8 @@ public class GcsStorageServiceTests
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Google.GoogleApiException("GCS", "File Not Found"));
 
-        var service = new GcsStorageService(mockClient.Object, "test-bucket");
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
 
         // Act
         var metadata = await service.GetFileMetadataAsync("nonexistent.txt");
