@@ -400,5 +400,3 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
         return client;
     }
 }
-
-
