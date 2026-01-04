@@ -194,6 +194,21 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
             // Add MassTransit test harness for testing message publishing/consuming
             services.AddMassTransitTestHarness();
 
+            // Selectively remove domain background services
+            // Infrastructure background services (MassTransit, IAM registration) are kept
+            // to ensure health checks pass.
+            var hostedServices = services.Where(d => d.ServiceType == typeof(IHostedService)).ToList();
+            foreach (var service in hostedServices)
+            {
+                var typeName = service.ImplementationType?.Name ??
+                              service.ImplementationFactory?.Method.ReturnType.Name ?? "";
+
+                if (typeName.Contains("LifecyclePolicyWorker"))
+                {
+                    services.Remove(service);
+                }
+            }
+
             // Allow derived classes to add additional test services
             ConfigureAdditionalServices(services);
         });
