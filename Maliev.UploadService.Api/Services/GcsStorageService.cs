@@ -6,11 +6,13 @@ public class GcsStorageService : IStorageService
 {
     private readonly StorageClient _storageClient;
     private readonly string _bucketName;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public GcsStorageService(StorageClient storageClient, string bucketName)
+    public GcsStorageService(StorageClient storageClient, string bucketName, IHttpClientFactory httpClientFactory)
     {
         _storageClient = storageClient;
         _bucketName = bucketName;
+        _httpClientFactory = httpClientFactory;
     }
 
     public async Task<StorageUploadResult> UploadFileAsync(
@@ -156,7 +158,7 @@ public class GcsStorageService : IStorageService
         long totalSize,
         CancellationToken cancellationToken = default)
     {
-        using var httpClient = new HttpClient();
+        var httpClient = _httpClientFactory.CreateClient();
 
         // Read chunk into memory (needed for Content-Range calculation)
         var chunkData = new byte[endByte - startByte + 1];
@@ -210,7 +212,7 @@ public class GcsStorageService : IStorageService
     private async Task<string> InitiateGcsResumableUploadAsync(Google.Apis.Storage.v1.Data.Object objectMetadata, CancellationToken cancellationToken)
     {
         // Use HttpClient to initiate resumable upload via GCS JSON API
-        using var httpClient = new HttpClient();
+        var httpClient = _httpClientFactory.CreateClient();
 
         // Get GCS upload endpoint
         var uploadUrl = $"https://storage.googleapis.com/upload/storage/v1/b/{_bucketName}/o?uploadType=resumable";

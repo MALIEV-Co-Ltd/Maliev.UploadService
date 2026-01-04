@@ -1,6 +1,5 @@
 using Asp.Versioning;
 using Maliev.UploadService.Data;
-using Maliev.UploadService.Api.Events;
 using Maliev.UploadService.Api.Extensions;
 using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Models.Requests;
@@ -8,6 +7,7 @@ using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
 using Maliev.Aspire.ServiceDefaults.Authorization;
+using Maliev.MessagingContracts.Generated;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -237,20 +237,39 @@ public class UploadsController : ControllerBase
                 "File uploaded successfully. UploadId: {UploadId}, Service: {ServiceName}, Size: {SizeBytes}",
                 uploadId, serviceName, uploadResult.SizeBytes);
 
-            // T158: Publish UploadCompletedEvent (FR-025)
-            await _publishEndpoint.Publish(new UploadCompletedEvent
-            {
-                UploadId = uploadId.ToString(),
-                ServiceId = serviceName,
-                StoragePath = uploadResult.StoragePath,
-                FileName = request.File.FileName,
-                ContentType = uploadResult.ContentType,
-                FileSize = uploadResult.SizeBytes,
-                UploadedAt = uploadResult.UploadedAt,
-                RetentionPolicyId = fileMetadata.RetentionPolicyId,
-                ExpiresAt = fileMetadata.ExpiresAt,
-                Metadata = fileMetadata.Metadata
-            }, cancellationToken);
+            // Generate signed URL for downstream services (like GeometryService)
+            // Valid for 1 hour
+            var downloadUrl = await _storageService.GenerateSignedUrlAsync(
+                uploadResult.StoragePath,
+                TimeSpan.FromHours(1),
+                cancellationToken);
+
+            // T158: Publish FileUploadedEvent (FR-025)
+            await _publishEndpoint.Publish(new FileUploadedEvent(
+                MessageId: Guid.NewGuid(),
+                MessageName: "FileUploadedEvent",
+                MessageType: MessageType.Event,
+                MessageVersion: "1.0.0",
+                PublishedBy: "UploadService",
+                ConsumedBy: ["GeometryService", "NotificationService"],
+                CorrelationId: Guid.NewGuid(),
+                CausationId: null,
+                OccurredAtUtc: DateTimeOffset.UtcNow,
+                IsPublic: false,
+                Payload: new FileUploadedEventPayload(
+                    UploadId: uploadId.ToString(),
+                    ServiceId: serviceName,
+                    FileName: request.File.FileName,
+                    StoragePath: uploadResult.StoragePath,
+                    ContentType: uploadResult.ContentType,
+                    FileSize: (int)uploadResult.SizeBytes,
+                    DownloadUrl: downloadUrl,
+                    UploadedAt: new DateTimeOffset(uploadResult.UploadedAt, TimeSpan.Zero),
+                    RetentionPolicyId: fileMetadata.RetentionPolicyId,
+                    ExpiresAt: fileMetadata.ExpiresAt.HasValue ? new DateTimeOffset(fileMetadata.ExpiresAt.Value, TimeSpan.Zero) : null,
+                    Metadata: fileMetadata.Metadata!
+                )
+            ), cancellationToken);
 
             return Ok(upload.ToResponse());
         }
@@ -268,36 +287,12 @@ public class UploadsController : ControllerBase
                 request.File.FileName, ex.Message);
             await LogUploadEventAsync(uploadId, serviceName, request.Path, "Failed", cancellationToken);
 
-            // T159: Publish UploadFailedEvent (FR-025)
-            await _publishEndpoint.Publish(new UploadFailedEvent
-            {
-                UploadId = uploadId.ToString(),
-                ServiceId = serviceName,
-                StoragePath = request.Path,
-                FileName = request.File.FileName,
-                FailedAt = DateTime.UtcNow,
-                ErrorMessage = ex.Message,
-                ErrorDetails = ex.StackTrace
-            }, cancellationToken);
-
             return BadRequest(new { error = ex.Message });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unexpected error during file upload. UploadId: {UploadId}", uploadId);
             await LogUploadEventAsync(uploadId, serviceName, request.Path, "Error", cancellationToken);
-
-            // T159: Publish UploadFailedEvent (FR-025)
-            await _publishEndpoint.Publish(new UploadFailedEvent
-            {
-                UploadId = uploadId.ToString(),
-                ServiceId = serviceName,
-                StoragePath = request.Path,
-                FileName = request.File.FileName,
-                FailedAt = DateTime.UtcNow,
-                ErrorMessage = ex.Message,
-                ErrorDetails = ex.StackTrace
-            }, cancellationToken);
 
             return StatusCode(500, new { error = "An error occurred during file upload" });
         }
@@ -468,6 +463,39 @@ public class UploadsController : ControllerBase
                 _logger.LogInformation(
                     "Resumable upload completed. UploadId: {UploadId}, TotalSize: {TotalSize}",
                     uploadId, totalSize);
+
+                // Generate signed URL for downstream services
+                var downloadUrl = await _storageService.GenerateSignedUrlAsync(
+                    upload.StoragePath,
+                    TimeSpan.FromHours(1),
+                    cancellationToken);
+
+                // T158: Publish FileUploadedEvent (FR-025)
+                await _publishEndpoint.Publish(new FileUploadedEvent(
+                    MessageId: Guid.NewGuid(),
+                    MessageName: "FileUploadedEvent",
+                    MessageType: MessageType.Event,
+                    MessageVersion: "1.0.0",
+                    PublishedBy: "UploadService",
+                    ConsumedBy: ["GeometryService", "NotificationService"],
+                    CorrelationId: Guid.NewGuid(),
+                    CausationId: null,
+                    OccurredAtUtc: DateTimeOffset.UtcNow,
+                    IsPublic: false,
+                    Payload: new FileUploadedEventPayload(
+                        UploadId: uploadId,
+                        ServiceId: upload.ServiceId,
+                        FileName: upload.FileName,
+                        StoragePath: upload.StoragePath,
+                        ContentType: upload.ContentType,
+                        FileSize: (int)upload.FileSize,
+                        DownloadUrl: downloadUrl,
+                        UploadedAt: DateTimeOffset.UtcNow,
+                        RetentionPolicyId: fileMetadata.RetentionPolicyId,
+                        ExpiresAt: fileMetadata.ExpiresAt.HasValue ? new DateTimeOffset(fileMetadata.ExpiresAt.Value, TimeSpan.Zero) : null,
+                        Metadata: fileMetadata.Metadata!
+                    )
+                ), cancellationToken);
 
                 return Ok(new ResumeUploadResponse
                 {

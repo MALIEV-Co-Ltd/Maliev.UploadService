@@ -105,8 +105,9 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddScoped<IStorageService>(sp =>
 {
     var storageClient = sp.GetRequiredService<Google.Cloud.Storage.V1.StorageClient>();
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
     var bucketName = builder.Configuration["GoogleCloud:BucketName"] ?? "maliev-uploads";
-    return new GcsStorageService(storageClient, bucketName);
+    return new GcsStorageService(storageClient, bucketName, httpClientFactory);
 });
 builder.Services.AddSingleton<nClam.IClamClient>(sp =>
 {
