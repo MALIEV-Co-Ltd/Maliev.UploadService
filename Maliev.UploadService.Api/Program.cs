@@ -84,11 +84,20 @@ builder.AddMassTransitWithRabbitMq(configurator =>
 {
     // Configure central events exchange for interoperability
     cfg.Message<FileUploadedEvent>(m => m.SetEntityName("maliev.events"));
-    cfg.Publish<FileUploadedEvent>(p => p.ExchangeType = "topic");
+    cfg.Publish<FileUploadedEvent>(p =>
+    {
+        p.ExchangeType = "topic";
+    });
 
     cfg.Message<FileDeletedEvent>(m => m.SetEntityName("maliev.events"));
-    cfg.Publish<FileDeletedEvent>(p => p.ExchangeType = "topic");
+    cfg.Publish<FileDeletedEvent>(p =>
+    {
+        p.ExchangeType = "topic";
+    });
 
+    // Configure routing keys for published events
+    // In MassTransit, topic routing keys for publishing are configured via cfg.Send
+    // when using topic exchange or directly in the Publish topology.
     cfg.Send<FileUploadedEvent>(s =>
     {
         s.UseRoutingKeyFormatter(ctx => "maliev.uploadservice.v1.upload.completed");
@@ -165,31 +174,6 @@ var logger = app.Services.GetRequiredService<ILogger<Program>>();
 // --- Database Migrations ---
 await app.MigrateDatabaseAsync<UploadDbContext>();
 
-// Seed default policy for geometry-service if it doesn't exist (Development/Testing only)
-if (app.Environment.IsDevelopment())
-{
-    using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
-    if (!await dbContext.ServiceAuthorizationPolicies.AnyAsync(p => p.ServiceId == "geometry-service"))
-    {
-        dbContext.ServiceAuthorizationPolicies.Add(new Maliev.UploadService.Data.Entities.ServiceAuthorizationPolicy
-        {
-            PolicyId = "policy-geometry-service",
-            ServiceId = "geometry-service",
-            ServiceName = "Geometry Analysis Service",
-            AllowedPathPrefixes = new List<string> { "geometry-test", "geometry/" },
-            AllowedContentTypes = new List<string> { "application/octet-stream", "model/stl", "text/plain" },
-            MaxFileSizeBytes = 100 * 1024 * 1024, // 100MB
-            StorageQuotaBytes = 1024 * 1024 * 1024, // 1GB
-            AllowOverwrite = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            IsActive = true
-        });
-        await dbContext.SaveChangesAsync();
-    }
-}
-
 // --- Middleware Pipeline ---
 app.UseStandardMiddleware();
 if (!app.Environment.IsDevelopment())
@@ -222,6 +206,13 @@ public partial class Program { }
 /// </summary>
 public class DummyClamClient : nClam.IClamClient
 {
+    public DummyClamClient()
+    {
+        // This is a dummy client, so we don't have access to ILogger here easily without DI changes,
+        // but we can at least write to Console or rely on the factory logging it.
+        Console.WriteLine("CRITICAL: DummyClamClient instantiated. Malware scanning is BYPASSED.");
+    }
+
     /// <inheritdoc />
     public int Port { get; set; } = 3310;
 
@@ -310,25 +301,26 @@ public class MockStorageService : IStorageService
     }
 
     /// <inheritdoc />
-    public Task<StorageUploadResult> UploadFileAsync(
+    public async Task<StorageUploadResult> UploadFileAsync(
         Stream fileStream,
         string storagePath,
         string contentType,
         bool overwrite = false,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("MOCK: Uploading file to {StoragePath}", storagePath);
-        return Task.FromResult(new StorageUploadResult
+        await Task.CompletedTask;
+        return new StorageUploadResult
         {
             StoragePath = storagePath,
             ContentType = contentType,
             SizeBytes = fileStream.Length,
-            UploadedAt = DateTime.UtcNow
-        });
+            UploadedAt = DateTime.UtcNow,
+            ETag = Guid.NewGuid().ToString()
+        };
     }
 
     /// <inheritdoc />
-    public Task<bool> FileExistsAsync(string storagePath, CancellationToken cancellationToken = default) => Task.FromResult(false);
+    public Task<bool> FileExistsAsync(string storagePath, CancellationToken cancellationToken = default) => Task.FromResult(true);
 
     /// <inheritdoc />
     public Task DeleteFileAsync(string storagePath, CancellationToken cancellationToken = default) => Task.CompletedTask;

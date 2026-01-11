@@ -179,7 +179,7 @@ public class FilesController : ControllerBase
     /// Generate signed URL for file download with caching
     /// </summary>
     [HttpPost("{uploadId}/signed-url")]
-    [RequirePermission(UploadPermissions.FilesRead, RequireLiveCheck = true)]
+    [RequirePermission(UploadPermissions.FilesDownload, RequireLiveCheck = true)]
     [ProducesResponseType(typeof(SignedUrlResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -222,36 +222,45 @@ public class FilesController : ControllerBase
 
         // Check cache for existing signed URL
         var cacheKey = $"signed-url:{uploadId}:{request.ExpirationMinutes}";
-        var cachedUrl = await _cache.GetStringAsync(cacheKey, cancellationToken);
+        var cachedData = await _cache.GetStringAsync(cacheKey, cancellationToken);
 
         string signedUrl;
         DateTime expiresAt;
 
-        if (!string.IsNullOrEmpty(cachedUrl))
+        if (!string.IsNullOrEmpty(cachedData))
         {
-            signedUrl = cachedUrl;
-            expiresAt = DateTime.UtcNow.AddMinutes(request.ExpirationMinutes);
-            _logger.LogDebug("Using cached signed URL for UploadId: {UploadId}", uploadId);
-        }
-        else
-        {
-            // Generate new signed URL
-            var expiration = TimeSpan.FromMinutes(request.ExpirationMinutes);
-            signedUrl = await _storageService.GenerateSignedUrlAsync(
-                fileMetadata.StoragePath,
-                expiration,
-                cancellationToken);
-
-            expiresAt = DateTime.UtcNow.Add(expiration);
-
-            // Cache the signed URL for 5 minutes (shorter than any possible expiration)
-            var cacheOptions = new DistributedCacheEntryOptions
+            var parts = cachedData.Split('|');
+            if (parts.Length == 2 && DateTime.TryParse(parts[1], out expiresAt))
             {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(
-                    Math.Min(SignedUrlCacheExpirationMinutes, request.ExpirationMinutes))
-            };
-            await _cache.SetStringAsync(cacheKey, signedUrl, cacheOptions, cancellationToken);
+                signedUrl = parts[0];
+                _logger.LogDebug("Using cached signed URL for UploadId: {UploadId}", uploadId);
+
+                return Ok(new SignedUrlResponse
+                {
+                    SignedUrl = signedUrl,
+                    ExpiresAt = expiresAt,
+                    UploadId = uploadId,
+                    StoragePath = fileMetadata.StoragePath
+                });
+            }
         }
+
+        // Generate new signed URL
+        var expiration = TimeSpan.FromMinutes(request.ExpirationMinutes);
+        signedUrl = await _storageService.GenerateSignedUrlAsync(
+            fileMetadata.StoragePath,
+            expiration,
+            cancellationToken);
+
+        expiresAt = DateTime.UtcNow.Add(expiration);
+
+        // Cache the signed URL and its absolute expiration for 5 minutes
+        var cacheOptions = new DistributedCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(
+                Math.Min(SignedUrlCacheExpirationMinutes, request.ExpirationMinutes))
+        };
+        await _cache.SetStringAsync(cacheKey, $"{signedUrl}|{expiresAt:O}", cacheOptions, cancellationToken);
 
         // T100: Audit logging
         await LogFileEventAsync(uploadId, serviceId, fileMetadata.StoragePath,
@@ -393,4 +402,3 @@ public class FilesController : ControllerBase
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 }
-
