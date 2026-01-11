@@ -131,7 +131,8 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
                 ["ConnectionStrings:redis"] = TestContainerFixture.RedisContainer.GetConnectionString(),
                 ["ConnectionStrings:rabbitmq"] = TestContainerFixture.RabbitMqContainer.GetConnectionString(),
                 ["Service:Name"] = "UploadService",
-                ["Service:Version"] = "1.0.0-test"
+                ["Service:Version"] = "1.0.0-test",
+                ["Jwt:SecurityKey"] = "test-secret-key-at-least-32-characters-long"
             });
         });
 

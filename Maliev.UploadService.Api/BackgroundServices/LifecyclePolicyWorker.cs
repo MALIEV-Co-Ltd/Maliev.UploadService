@@ -55,7 +55,7 @@ public class LifecyclePolicyWorker : BackgroundService
 
     private async Task ProcessLifecyclePoliciesAsync(CancellationToken cancellationToken)
     {
-        _logger.LogInformation("Processing lifecycle policies");
+        _logger.LogDebug("Processing lifecycle policies");
 
         using var scope = _serviceProvider.CreateScope();
         var lifecycleService = scope.ServiceProvider.GetRequiredService<ILifecycleManagementService>();
@@ -85,4 +85,3 @@ public class LifecyclePolicyWorker : BackgroundService
         }
     }
 }
-
