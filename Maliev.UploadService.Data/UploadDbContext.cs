@@ -31,8 +31,8 @@ public class UploadDbContext : DbContext
             v => v == null ? null : JsonSerializer.Deserialize<Dictionary<string, string>>(v, (JsonSerializerOptions?)null));
 
         var dictionaryComparer = new ValueComparer<Dictionary<string, string>?>(
-            (c1, c2) => (c1 == null && c2 == null) || (c1 != null && c2 != null && c1.SequenceEqual(c2)),
-            c => c == null ? 0 : c.Aggregate(0, (a, v) => HashCode.Combine(a, v.Key.GetHashCode(), v.Value.GetHashCode())),
+            (c1, c2) => (c1 == null && c2 == null) || (c1 != null && c2 != null && c1.Count == c2.Count && !c1.Except(c2).Any()),
+            c => c == null ? 0 : c.OrderBy(kvp => kvp.Key).Aggregate(0, (a, v) => HashCode.Combine(a, v.Key.GetHashCode(), v.Value.GetHashCode())),
             c => c == null ? null : new Dictionary<string, string>(c));
 
         // Nullable list converter
