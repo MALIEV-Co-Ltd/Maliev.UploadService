@@ -83,7 +83,8 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
                     StoragePath = path,
                     ContentType = contentType,
                     SizeBytes = fileSize,
-                    UploadedAt = DateTime.UtcNow
+                    UploadedAt = DateTime.UtcNow,
+                    ETag = "mock-etag"
                 };
             });
 
@@ -230,6 +231,7 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
             new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub, userId),
             new(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new("permission", "upload.files.upload"),
+            new("permission", "upload.files.download"),
             new("permission", "upload.files.read"),
             new("permission", "upload.files.delete"),
             new("permission", "upload.files.list"),
@@ -254,5 +256,3 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
         return client;
     }
 }
-
-

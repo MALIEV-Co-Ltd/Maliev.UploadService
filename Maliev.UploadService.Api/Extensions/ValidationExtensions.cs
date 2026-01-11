@@ -115,13 +115,12 @@ public static partial class ValidationExtensions
         return path;
     }
 
-    [GeneratedRegex(@"^[a-zA-Z]:[\\/]|^/", RegexOptions.Compiled)]
+    [GeneratedRegex(@"^[a-zA-Z]:[\\/]|^/")]
     private static partial Regex AbsolutePathRegex();
 
-    [GeneratedRegex(@"/+", RegexOptions.Compiled)]
+    [GeneratedRegex(@"/+")]
     private static partial Regex MultipleSlashRegex();
 
-    [GeneratedRegex(@"\{[^}]+\}", RegexOptions.Compiled)]
+    [GeneratedRegex(@"\{[^}]+\}")]
     private static partial Regex PlaceholderRegex();
 }
-

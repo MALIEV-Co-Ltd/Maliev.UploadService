@@ -13,8 +13,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Maliev.UploadService.Data.Migrations
 {
     [DbContext(typeof(UploadDbContext))]
-    [Migration("20251217165454_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20260111105408_UpdateModelWithComparers")]
+    partial class UpdateModelWithComparers
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -330,6 +330,23 @@ namespace Maliev.UploadService.Data.Migrations
                         .HasDatabaseName("idx_authz_policy_service_id");
 
                     b.ToTable("service_authorization_policies", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            PolicyId = "policy-geometry-service",
+                            AllowOverwrite = true,
+                            AllowResumableUpload = true,
+                            AllowedContentTypes = "[\"application/octet-stream\",\"model/stl\",\"text/plain\"]",
+                            AllowedPathPrefixes = "[\"geometry-test\",\"geometry/\"]",
+                            CreatedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaxFileSizeBytes = 104857600L,
+                            ServiceId = "geometry-service",
+                            ServiceName = "Geometry Analysis Service",
+                            StorageQuotaBytes = 1073741824L,
+                            UpdatedAt = new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc)
+                        });
                 });
 
             modelBuilder.Entity("Maliev.UploadService.Data.Entities.Upload", b =>

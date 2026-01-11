@@ -1,7 +1,10 @@
+using Maliev.Aspire.ServiceDefaults;
 using Maliev.UploadService.Api.BackgroundServices;
 using Maliev.UploadService.Api.Metrics;
 using Maliev.UploadService.Api.Services;
+using Maliev.UploadService.Api.Services.Auth;
 using Maliev.UploadService.Data;
+using Maliev.MessagingContracts.Generated;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
@@ -77,14 +80,43 @@ builder.AddMassTransitWithRabbitMq(configurator =>
 
     // Configure message topology for routing keys: maliev.uploadservice.v1.{entity}.{action}
     configurator.SetKebabCaseEndpointNameFormatter();
+}, (context, cfg) =>
+{
+    // Configure central events exchange for interoperability
+    cfg.Message<FileUploadedEvent>(m => m.SetEntityName("maliev.events"));
+    cfg.Publish<FileUploadedEvent>(p =>
+    {
+        p.ExchangeType = "topic";
+    });
+
+    cfg.Message<FileDeletedEvent>(m => m.SetEntityName("maliev.events"));
+    cfg.Publish<FileDeletedEvent>(p =>
+    {
+        p.ExchangeType = "topic";
+    });
+
+    // Configure routing keys for published events
+    // In MassTransit, topic routing keys for publishing are configured via cfg.Send
+    // when using topic exchange or directly in the Publish topology.
+    cfg.Send<FileUploadedEvent>(s =>
+    {
+        s.UseRoutingKeyFormatter(ctx => "maliev.uploadservice.v1.upload.completed");
+    });
+
+    cfg.Send<FileDeletedEvent>(s =>
+    {
+        s.UseRoutingKeyFormatter(ctx => "maliev.uploadservice.v1.file.deleted");
+    });
+
+    cfg.ConfigureEndpoints(context);
 });
 
 // Add services
 builder.Services.AddScoped<IAuthorizationPolicyService, AuthorizationPolicyService>();
 
 // IAM Services
-builder.AddServiceClient<Maliev.Aspire.ServiceDefaults.IAM.IIamServiceClient, Maliev.UploadService.Api.Services.Auth.IamServiceClient>("IAM");
-builder.Services.AddScoped<Maliev.UploadService.Api.Services.Auth.UploadIAMRegistrationService>();
+builder.AddIAMServiceClient("upload");
+builder.Services.AddIAMRegistration<UploadIAMRegistrationService>("upload");
 
 // T082: Register FileValidationService and GcsStorageService
 builder.Services.AddScoped<IValidationService, FileValidationService>();
@@ -97,22 +129,39 @@ builder.Services.AddScoped<IBulkDeleteService, BulkDeleteService>();
 
 // T135: Register LifecyclePolicyWorker background service
 builder.Services.AddHostedService<LifecyclePolicyWorker>();
-builder.Services.AddSingleton(sp =>
+
+var googleCloudEnabled = builder.Configuration.GetValue<bool>("GoogleCloud:Enabled", true);
+
+if (googleCloudEnabled)
 {
-    var bucketName = builder.Configuration["GoogleCloud:BucketName"] ?? "maliev-uploads";
-    return Google.Cloud.Storage.V1.StorageClient.Create();
-});
-builder.Services.AddScoped<IStorageService>(sp =>
+    builder.Services.AddSingleton(sp =>
+    {
+        return Google.Cloud.Storage.V1.StorageClient.Create();
+    });
+    builder.Services.AddScoped<IStorageService>(sp =>
+    {
+        var storageClient = sp.GetRequiredService<Google.Cloud.Storage.V1.StorageClient>();
+        var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+        var bucketName = builder.Configuration["GoogleCloud:BucketName"] ?? "maliev-uploads";
+        return new GcsStorageService(storageClient, bucketName, httpClientFactory);
+    });
+}
+else
 {
-    var storageClient = sp.GetRequiredService<Google.Cloud.Storage.V1.StorageClient>();
-    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-    var bucketName = builder.Configuration["GoogleCloud:BucketName"] ?? "maliev-uploads";
-    return new GcsStorageService(storageClient, bucketName, httpClientFactory);
-});
+    builder.Services.AddScoped<IStorageService, MockStorageService>();
+}
+
 builder.Services.AddSingleton<nClam.IClamClient>(sp =>
 {
     var clamHost = builder.Configuration["ClamAV:Host"] ?? "localhost";
     var clamPort = int.Parse(builder.Configuration["ClamAV:Port"] ?? "3310");
+    var enabled = builder.Configuration.GetValue<bool>("ClamAV:Enabled", true);
+
+    if (!enabled)
+    {
+        return new DummyClamClient(sp.GetRequiredService<ILogger<DummyClamClient>>());
+    }
+
     return new nClam.ClamClient(clamHost, clamPort);
 });
 
@@ -127,7 +176,10 @@ await app.MigrateDatabaseAsync<UploadDbContext>();
 
 // --- Middleware Pipeline ---
 app.UseStandardMiddleware();
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseRouting();
 app.UseCors();
 app.UseAuthentication();
@@ -146,4 +198,3 @@ await app.RunAsync();
 /// Main program class for the application
 /// </summary>
 public partial class Program { }
-

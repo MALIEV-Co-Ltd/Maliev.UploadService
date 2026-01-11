@@ -7,46 +7,34 @@ namespace Maliev.UploadService.Api.Services.Auth;
 /// Handles registration of Upload Service permissions and predefined roles in the central IAM Service.
 /// Implements Constitution Principle XIII: Aspire &amp; Service Defaults integration.
 /// </summary>
-public class UploadIAMRegistrationService
+public class UploadIAMRegistrationService : IAMRegistrationService
 {
-    private readonly IIamServiceClient _iamClient;
-    private readonly ILogger<UploadIAMRegistrationService> _logger;
-
     public UploadIAMRegistrationService(
-        IIamServiceClient iamClient,
+        IConfiguration configuration,
         ILogger<UploadIAMRegistrationService> logger)
+        : base(configuration, logger, "upload")
     {
-        _iamClient = iamClient;
-        _logger = logger;
     }
 
-    /// <summary>
-    /// Registers all defined permissions and roles. 
-    /// Should be called during application startup or via a migration task.
-    /// </summary>
-    public async Task RegisterAsync(CancellationToken cancellationToken = default)
+    /// <inheritdoc/>
+    protected override IEnumerable<PermissionRegistration> GetPermissions()
     {
-        try
+        return UploadPermissions.AllWithDescriptions.Select(p => new PermissionRegistration
         {
-            _logger.LogInformation("Starting IAM permission registration...");
+            PermissionId = p.Key,
+            Description = p.Value
+        });
+    }
 
-            // Permission definitions would be sent to IAM Service here
-            // e.g., await _iamClient.DefinePermissionAsync(UploadPermissions.FilesUpload, "Upload files", cancellationToken);
-
-            _logger.LogInformation("Successfully registered {Count} permissions", 9);
-
-            _logger.LogInformation("Starting IAM role registration...");
-
-            // Role definitions would be sent to IAM Service here
-            // e.g., await _iamClient.DefineRoleAsync(UploadPredefinedRoles.Admin, new[] { "upload.*" }, cancellationToken);
-
-            _logger.LogInformation("Successfully registered {Count} predefined roles", 4);
-        }
-        catch (Exception ex)
+    /// <inheritdoc/>
+    protected override IEnumerable<RoleRegistration> GetPredefinedRoles()
+    {
+        return UploadPredefinedRoles.All.Select(r => new RoleRegistration
         {
-            _logger.LogError(ex, "Failed to register permissions and roles with IAM Service");
-            throw; // Critical failure if we can't register auth schema
-        }
+            RoleId = r.RoleId,
+            Description = r.Description,
+            PermissionIds = r.Permissions.ToList(),
+            IsCustom = false
+        });
     }
 }
-

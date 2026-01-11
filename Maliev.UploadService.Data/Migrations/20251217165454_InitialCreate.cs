@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore.Migrations;
 
@@ -303,4 +303,3 @@ namespace Maliev.UploadService.Data.Migrations
         }
     }
 }
-
