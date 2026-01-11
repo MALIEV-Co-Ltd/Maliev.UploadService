@@ -15,6 +15,7 @@ bld/
 # IDE files
 .vs/
 .vscode/
+*.csproj.user
 
 # NuGet Packages
 *.nupkg
