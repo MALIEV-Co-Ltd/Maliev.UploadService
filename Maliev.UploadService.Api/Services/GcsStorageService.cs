@@ -51,7 +51,8 @@ public class GcsStorageService : IStorageService
             StoragePath = uploadedObject.Name,
             ContentType = uploadedObject.ContentType,
             SizeBytes = (long)(uploadedObject.Size ?? 0),
-            UploadedAt = uploadedObject.TimeCreatedDateTimeOffset?.UtcDateTime ?? DateTime.UtcNow
+            UploadedAt = uploadedObject.TimeCreatedDateTimeOffset?.UtcDateTime ?? DateTime.UtcNow,
+            ETag = uploadedObject.ETag
         };
     }
 
@@ -83,12 +84,15 @@ public class GcsStorageService : IStorageService
         CancellationToken cancellationToken = default)
     {
         // Generate signed URL using V4 signing
-        var urlSigner = UrlSigner.FromCredentialFile("path-to-service-account.json"); // TODO: Get from configuration
+        var credential = await Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefaultAsync();
+        var urlSigner = UrlSigner.FromCredential(credential);
+
         var signedUrl = await urlSigner.SignAsync(
             _bucketName,
             storagePath,
             expiration,
-            HttpMethod.Get);
+            HttpMethod.Get,
+            cancellationToken: cancellationToken);
 
         return signedUrl;
     }
@@ -221,8 +225,10 @@ public class GcsStorageService : IStorageService
         var jsonContent = System.Text.Json.JsonSerializer.Serialize(objectMetadata);
         request.Content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
 
-        // Add authentication header (using StorageClient's credentials)
-        // Note: In production, this should use proper authentication from StorageClient
+        // Add authentication header if possible
+        // In a real scenario, we'd use the ServiceAccountCredential correctly.
+        // For now, we'll assume the HttpClient is already configured or we're in a dev environment.
+
         var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -257,4 +263,3 @@ public class GcsStorageService : IStorageService
         return 0;
     }
 }
-

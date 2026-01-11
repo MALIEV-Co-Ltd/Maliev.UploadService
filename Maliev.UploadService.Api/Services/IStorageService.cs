@@ -56,6 +56,7 @@ public class StorageUploadResult
     public required string ContentType { get; set; }
     public required long SizeBytes { get; set; }
     public required DateTime UploadedAt { get; set; }
+    public required string ETag { get; set; }
 }
 
 public class ResumableUploadSession
@@ -72,4 +73,3 @@ public class ResumableUploadProgress
     public required bool IsComplete { get; set; }
     public string? StoragePath { get; set; }
 }
-

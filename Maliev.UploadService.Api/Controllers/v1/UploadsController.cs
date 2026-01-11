@@ -184,7 +184,7 @@ public class UploadsController : ControllerBase
                 UploadId = uploadId.ToString(),
                 ServiceId = serviceName,
                 StoragePath = uploadResult.StoragePath,
-                VersionETag = Guid.NewGuid().ToString(), // TODO: Get actual ETag from GCS
+                VersionETag = uploadResult.ETag,
                 FileSize = uploadResult.SizeBytes,
                 ContentType = uploadResult.ContentType,
                 Checksum = "TODO", // TODO: Calculate checksum
@@ -442,6 +442,9 @@ public class UploadsController : ControllerBase
                 upload.Status = UploadStatus.Completed;
                 upload.CompletedAt = DateTime.UtcNow;
 
+                // Get actual ETag from storage if possible
+                var gcsMetadata = await _storageService.GetFileMetadataAsync(upload.StoragePath, cancellationToken);
+
                 // Create FileMetadata entity
                 var fileMetadata = new FileMetadata
                 {
@@ -449,7 +452,7 @@ public class UploadsController : ControllerBase
                     UploadId = uploadId,
                     ServiceId = upload.ServiceId,
                     StoragePath = upload.StoragePath,
-                    VersionETag = Guid.NewGuid().ToString(),
+                    VersionETag = gcsMetadata?.ETag ?? Guid.NewGuid().ToString(),
                     FileSize = upload.FileSize,
                     ContentType = upload.ContentType,
                     Checksum = "TODO",
@@ -576,4 +579,3 @@ public class UploadsController : ControllerBase
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 }
-
