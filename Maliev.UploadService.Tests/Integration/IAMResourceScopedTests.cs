@@ -118,6 +118,7 @@ public class IAMResourceScopedTests : IAsyncLifetime
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim("service_id", serviceName),
             new Claim("permission", "upload.files.upload"),
+            new Claim("permission", "upload.files.download"),
             new Claim("permission", "upload.files.read"),
             new Claim("permission", "upload.files.delete"),
             new Claim("permission", "upload.files.list"),
@@ -139,8 +140,3 @@ public class IAMResourceScopedTests : IAsyncLifetime
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
-
-
-
-
-

@@ -157,6 +157,7 @@ public class UploadsControllerTests : IAsyncLifetime
             new Claim(JwtRegisteredClaimNames.Sub, serviceName),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new Claim("permission", "upload.files.upload"),
+            new Claim("permission", "upload.files.download"),
             new Claim("permission", "upload.files.read"),
             new Claim("permission", "upload.files.delete"),
             new Claim("permission", "upload.files.list"),
@@ -514,8 +515,3 @@ public class UploadsControllerTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 }
-
-
-
-
-
