@@ -1,3 +1,4 @@
+#pragma warning disable CA1848 // For improved performance, use the LoggerMessage delegates
 using Maliev.Aspire.ServiceDefaults;
 using Maliev.UploadService.Api.BackgroundServices;
 using Maliev.UploadService.Api.Metrics;
