@@ -1,4 +1,3 @@
-#pragma warning disable CA1848 // For improved performance, use the LoggerMessage delegates
 using Maliev.Aspire.ServiceDefaults;
 using Maliev.UploadService.Api.BackgroundServices;
 using Maliev.UploadService.Api.Metrics;
@@ -17,7 +16,7 @@ var bootstrapLogger = loggerFactory.CreateLogger("Program");
 
 try
 {
-    bootstrapLogger.LogInformation("Starting Upload Service host");
+    Program.Log.StartingHost(bootstrapLogger, "Upload Service");
 
     var builder = WebApplication.CreateBuilder(args);
 
@@ -200,13 +199,12 @@ try
     app.MapDefaultEndpoints(servicePrefix: "upload"); // Health checks: /upload/liveness, /upload/readiness
     app.MapApiDocumentation(servicePrefix: "upload"); // OpenAPI: /upload/openapi/v1.json, Scalar UI: /upload/scalar
 
-    logger.LogInformation("UploadService started successfully on {Environment} environment", app.Environment.EnvironmentName);
-
+    Program.Log.ServiceStarted(logger, "Upload Service");
     await app.RunAsync();
 }
 catch (Exception ex)
 {
-    bootstrapLogger.LogCritical(ex, "Upload Service host terminated unexpectedly during startup");
+    Program.Log.HostTerminated(bootstrapLogger, ex, "Upload Service");
     throw;
 }
 finally
@@ -217,4 +215,17 @@ finally
 /// <summary>
 /// Main program class for the application
 /// </summary>
-public partial class Program { }
+public partial class Program
+{
+    internal static partial class Log
+    {
+        [LoggerMessage(Level = LogLevel.Information, Message = "Starting {ServiceName} host")]
+        public static partial void StartingHost(ILogger logger, string serviceName);
+
+        [LoggerMessage(Level = LogLevel.Critical, Message = "{ServiceName} host terminated unexpectedly during startup")]
+        public static partial void HostTerminated(ILogger logger, Exception ex, string serviceName);
+
+        [LoggerMessage(Level = LogLevel.Information, Message = "{ServiceName} started successfully")]
+        public static partial void ServiceStarted(ILogger logger, string serviceName);
+    }
+}
