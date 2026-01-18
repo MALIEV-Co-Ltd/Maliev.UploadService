@@ -1,8 +1,8 @@
+using Maliev.Aspire.ServiceDefaults.IAM;
+using Maliev.UploadService.Api.Metrics;
+using Maliev.UploadService.Api.Services.Auth;
 using Maliev.UploadService.Data;
 using Maliev.UploadService.Data.Entities;
-using Maliev.UploadService.Api.Services.Auth;
-using Maliev.UploadService.Api.Metrics;
-using Maliev.Aspire.ServiceDefaults.IAM;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;
@@ -184,4 +184,3 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
         return !wouldExceed;
     }
 }
-

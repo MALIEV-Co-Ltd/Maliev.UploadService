@@ -1,5 +1,5 @@
-using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Models.Responses;
+using Maliev.UploadService.Data.Entities;
 
 namespace Maliev.UploadService.Api.Extensions;
 
@@ -23,4 +23,3 @@ public static class UploadMappingExtensions
         };
     }
 }
-

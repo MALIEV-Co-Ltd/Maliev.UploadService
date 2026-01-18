@@ -1,7 +1,5 @@
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using Microsoft.Extensions.Configuration;
 
 namespace Maliev.UploadService.Api.Metrics;
 
@@ -283,4 +281,3 @@ public class UploadMetrics
         _ => ">1GB"
     };
 }
-

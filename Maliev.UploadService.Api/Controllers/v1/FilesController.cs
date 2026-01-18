@@ -1,13 +1,13 @@
 using Asp.Versioning;
-using Maliev.UploadService.Data;
+using Maliev.Aspire.ServiceDefaults.Authorization;
+using Maliev.MessagingContracts.Generated;
 using Maliev.UploadService.Api.Extensions;
-using Maliev.UploadService.Data.Entities;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
-using Maliev.Aspire.ServiceDefaults.Authorization;
-using Maliev.MessagingContracts.Generated;
+using Maliev.UploadService.Data;
+using Maliev.UploadService.Data.Entities;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using Maliev.Aspire.ServiceDefaults.IAM;
 
 namespace Maliev.UploadService.Api.Services.Auth;

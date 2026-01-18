@@ -1,5 +1,5 @@
-using System.Net;
 using nClam;
+using System.Net;
 
 namespace Maliev.UploadService.Api.Services;
 

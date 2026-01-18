@@ -1,13 +1,11 @@
-using Maliev.Aspire.ServiceDefaults;
+using Maliev.MessagingContracts.Generated;
 using Maliev.UploadService.Api.BackgroundServices;
 using Maliev.UploadService.Api.Metrics;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
 using Maliev.UploadService.Data;
-using Maliev.MessagingContracts.Generated;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using Scalar.AspNetCore;
 
 // Initialize bootstrap logging
