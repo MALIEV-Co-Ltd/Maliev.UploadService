@@ -1,5 +1,3 @@
-using Maliev.UploadService.Api.Models.Responses;
-
 namespace Maliev.UploadService.Api.Services;
 
 /// <summary>

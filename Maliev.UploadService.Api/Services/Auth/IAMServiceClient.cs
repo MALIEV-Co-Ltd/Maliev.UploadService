@@ -1,10 +1,5 @@
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http.Json;
-using Microsoft.Extensions.Caching.Distributed;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using Maliev.Aspire.ServiceDefaults.IAM;
+using Microsoft.Extensions.Caching.Distributed;
 
 namespace Maliev.UploadService.Api.Services.Auth;
 

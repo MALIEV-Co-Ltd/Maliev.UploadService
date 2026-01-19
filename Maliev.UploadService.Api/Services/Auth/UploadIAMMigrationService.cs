@@ -1,8 +1,6 @@
-using Maliev.UploadService.Data;
-using Maliev.UploadService.Data.Entities;
 using Maliev.Aspire.ServiceDefaults.IAM;
+using Maliev.UploadService.Data;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace Maliev.UploadService.Api.Services.Auth;
 
@@ -84,4 +82,3 @@ public class UploadIAMMigrationService
         }
     }
 }
-

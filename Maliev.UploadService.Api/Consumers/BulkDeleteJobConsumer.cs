@@ -1,5 +1,5 @@
-using MassTransit;
 using Maliev.UploadService.Api.Services;
+using MassTransit;
 
 namespace Maliev.UploadService.Api.Consumers;
 
@@ -42,4 +42,3 @@ public class BulkDeleteJobMessage
 {
     public required string JobId { get; set; }
 }
-

@@ -18,6 +18,9 @@ using Testcontainers.Redis;
 using Xunit;
 using Npgsql;
 
+// Disable parallel execution to prevent race conditions on the shared singleton database
+[assembly: CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Maliev.UploadService.Tests.Testing;
 
 /// <summary>

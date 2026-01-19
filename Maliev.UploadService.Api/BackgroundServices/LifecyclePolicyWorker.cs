@@ -53,7 +53,8 @@ public class LifecyclePolicyWorker : BackgroundService
         _logger.LogInformation("Lifecycle Policy Worker stopping");
     }
 
-    private async Task ProcessLifecyclePoliciesAsync(CancellationToken cancellationToken)
+    internal async Task ProcessLifecyclePoliciesAsync(CancellationToken cancellationToken)
+
     {
         _logger.LogDebug("Processing lifecycle policies");
 
