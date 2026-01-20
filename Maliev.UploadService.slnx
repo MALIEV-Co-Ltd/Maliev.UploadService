@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Maliev.UploadService.Api/Maliev.UploadService.Api.csproj" />
+  <Project Path="Maliev.UploadService.Data/Maliev.UploadService.Data.csproj" />
+  <Project Path="Maliev.UploadService.Tests/Maliev.UploadService.Tests.csproj" />
+</Solution>
