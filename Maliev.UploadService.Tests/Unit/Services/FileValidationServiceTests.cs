@@ -1,7 +1,4 @@
-using Maliev.Aspire.ServiceDefaults.IAM;
 using Maliev.UploadService.Api.Services;
-using Moq;
-using nClam;
 using Xunit;
 
 namespace Maliev.UploadService.Tests.Unit.Services;
@@ -12,14 +9,7 @@ public class FileValidationServiceTests
     public async Task ValidateFileAsync_ValidTextFile_ReturnsSuccess()
     {
         // Arrange
-        var mockClamClient = new Mock<IClamClient>();
-        // Clean scan result - raw result indicates no virus found
-        var cleanScanResult = new ClamScanResult("stream: OK");
-        mockClamClient
-            .Setup(x => x.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cleanScanResult);
-
-        var service = new FileValidationService(mockClamClient.Object);
+        var service = new FileValidationService();
         var fileContent = System.Text.Encoding.UTF8.GetBytes("Hello, world!");
         using var stream = new MemoryStream(fileContent);
 
@@ -35,8 +25,7 @@ public class FileValidationServiceTests
     public async Task ValidateFileAsync_ExecutableFile_ReturnsError()
     {
         // Arrange
-        var mockClamClient = new Mock<IClamClient>();
-        var service = new FileValidationService(mockClamClient.Object);
+        var service = new FileValidationService();
 
         // MZ header indicates executable
         var exeContent = new byte[] { 0x4D, 0x5A, 0x90, 0x00 };
@@ -58,8 +47,7 @@ public class FileValidationServiceTests
     public async Task ValidateFileAsync_FileTooLarge_ReturnsError()
     {
         // Arrange
-        var mockClamClient = new Mock<IClamClient>();
-        var service = new FileValidationService(mockClamClient.Object);
+        var service = new FileValidationService();
         using var stream = new MemoryStream();
 
         // Simulate 200MB file (exceeds typical limit)
@@ -86,13 +74,7 @@ public class FileValidationServiceTests
     public async Task ValidateFileAsync_DetectsCorrectContentType(string declaredType, byte[] signature, string expectedDetectedType)
     {
         // Arrange
-        var mockClamClient = new Mock<IClamClient>();
-        var cleanScanResult = new ClamScanResult("stream: OK");
-        mockClamClient
-            .Setup(x => x.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cleanScanResult);
-
-        var service = new FileValidationService(mockClamClient.Object);
+        var service = new FileValidationService();
 
         // Create file with proper signature
         var fileContent = new byte[1024];
@@ -108,37 +90,10 @@ public class FileValidationServiceTests
     }
 
     [Fact]
-    public async Task ValidateFileAsync_ScanFailure_ReturnsError()
-    {
-        // Arrange
-        var mockClamClient = new Mock<IClamClient>();
-        mockClamClient
-            .Setup(x => x.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Exception("ClamAV connection failed"));
-
-        var service = new FileValidationService(mockClamClient.Object);
-        var fileContent = System.Text.Encoding.UTF8.GetBytes("Test content");
-        using var stream = new MemoryStream(fileContent);
-
-        // Act
-        var result = await service.ValidateFileAsync(stream, "test.txt", "text/plain", fileContent.Length);
-
-        // Assert
-        Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, e => e.Contains("Malware scan failed"));
-    }
-
-    [Fact]
     public async Task ValidateFileAsync_EmptyFile_PassesValidation()
     {
         // Arrange
-        var mockClamClient = new Mock<IClamClient>();
-        var cleanScanResult = new ClamScanResult("stream: OK");
-        mockClamClient
-            .Setup(x => x.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cleanScanResult);
-
-        var service = new FileValidationService(mockClamClient.Object);
+        var service = new FileValidationService();
         using var stream = new MemoryStream();
 
         // Act
@@ -152,8 +107,7 @@ public class FileValidationServiceTests
     public async Task ValidateFileAsync_DisallowedContentType_ReturnsError()
     {
         // Arrange
-        var mockClamClient = new Mock<IClamClient>();
-        var service = new FileValidationService(mockClamClient.Object);
+        var service = new FileValidationService();
         using var stream = new MemoryStream();
 
         // Act
@@ -165,40 +119,10 @@ public class FileValidationServiceTests
     }
 
     [Fact]
-    public async Task ValidateFileAsync_MalwareDetected_ReturnsError()
-    {
-        // Arrange
-        var mockClamClient = new Mock<IClamClient>();
-        // Infected scan result - raw result indicates virus found
-        var infectedScanResult = new ClamScanResult("stream: EICAR-Test-File FOUND");
-        mockClamClient
-            .Setup(x => x.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(infectedScanResult);
-
-        var service = new FileValidationService(mockClamClient.Object);
-        var fileContent = System.Text.Encoding.UTF8.GetBytes("test content");
-        using var stream = new MemoryStream(fileContent);
-
-        // Act
-        var result = await service.ValidateFileAsync(stream, "test.txt", "text/plain", fileContent.Length);
-
-        // Assert
-        Assert.False(result.IsValid);
-        Assert.Contains(result.Errors, e => e.Contains("malware", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
     public async Task ValidateFileAsync_ContentTypeMismatch_ReturnsDetectedType()
     {
         // Arrange
-        var mockClamClient = new Mock<IClamClient>();
-        // Clean scan result
-        var cleanScanResult = new ClamScanResult("stream: OK");
-        mockClamClient
-            .Setup(x => x.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cleanScanResult);
-
-        var service = new FileValidationService(mockClamClient.Object);
+        var service = new FileValidationService();
 
         // PNG file header
         var pngContent = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
@@ -216,5 +140,3 @@ public class FileValidationServiceTests
         Assert.Contains("image", result.DetectedContentType, StringComparison.OrdinalIgnoreCase);
     }
 }
-
-

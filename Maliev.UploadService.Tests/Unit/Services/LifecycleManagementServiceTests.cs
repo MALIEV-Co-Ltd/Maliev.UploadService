@@ -15,11 +15,13 @@ namespace Maliev.UploadService.Tests.Unit.Services;
 public class LifecycleManagementServiceTests
 {
     private readonly Mock<ILogger<LifecycleManagementService>> _loggerMock;
+    private readonly Mock<IStorageService> _storageServiceMock;
     private readonly DbContextOptions<UploadDbContext> _dbOptions;
 
     public LifecycleManagementServiceTests()
     {
         _loggerMock = new Mock<ILogger<LifecycleManagementService>>();
+        _storageServiceMock = new Mock<IStorageService>();
 
         _dbOptions = new DbContextOptionsBuilder<UploadDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
@@ -31,7 +33,8 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
+
 
         var policy = new RetentionPolicy
         {
@@ -73,7 +76,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var policy = new RetentionPolicy
         {
@@ -113,7 +116,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var policy = new RetentionPolicy
         {
@@ -143,7 +146,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var policy = new RetentionPolicy
         {
@@ -172,7 +175,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var transitions = new List<StorageClassTransition>
         {
@@ -193,7 +196,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var policy = new RetentionPolicy
         {
@@ -233,7 +236,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var fileMetadata = new FileMetadata
         {
@@ -260,7 +263,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var globalPolicy = new RetentionPolicy
         {
@@ -290,7 +293,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var globalPolicy = new RetentionPolicy
         {
@@ -332,7 +335,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var broadPolicy = new RetentionPolicy
         {
@@ -374,7 +377,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         // Act
         var result = service.GetStorageClassForAge(100, new List<StorageClassTransition>());
@@ -388,7 +391,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         // Act
         var result = service.GetStorageClassForAge(100, null);
@@ -402,7 +405,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         // Add expired files
         var expiredFile1 = new FileMetadata
@@ -463,7 +466,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         // Add only non-expired files
         var activeFile = new FileMetadata
@@ -495,7 +498,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         // Create retention policy with storage class transitions
         var policy = new RetentionPolicy
@@ -551,7 +554,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         // Create retention policy with storage class transitions
         var policy = new RetentionPolicy
@@ -602,7 +605,7 @@ public class LifecycleManagementServiceTests
     {
         // Arrange
         using var context = new UploadDbContext(_dbOptions);
-        var service = new LifecycleManagementService(context, _loggerMock.Object);
+        var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         // Create retention policy without storage class transitions
         var policy = new RetentionPolicy

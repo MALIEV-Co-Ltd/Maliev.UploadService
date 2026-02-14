@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using Moq;
-using nClam;
 
 namespace Maliev.UploadService.Tests.Fixtures;
 
@@ -24,28 +23,6 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
         services.AddScoped<Microsoft.AspNetCore.Authorization.IAuthorizationHandler,
                            Maliev.Aspire.ServiceDefaults.Authorization.PermissionAuthorizationHandler>();
         services.AddAuthorizationBuilder();
-
-        // Replace ClamAV client with mock implementation for tests
-        // Remove the real ClamClient registration
-        var clamClientDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(IClamClient));
-        if (clamClientDescriptor != null)
-        {
-            services.Remove(clamClientDescriptor);
-        }
-
-        // Register mock ClamClient that returns clean scan results
-        var mockClamClient = new Mock<IClamClient>();
-        mockClamClient
-            .Setup(m => m.SendAndScanFileAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ClamScanResult("stream: OK"));
-        mockClamClient
-            .Setup(m => m.SendAndScanFileAsync(It.IsAny<byte[]>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ClamScanResult("stream: OK"));
-        mockClamClient
-            .Setup(m => m.PingAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        services.AddSingleton(mockClamClient.Object);
 
         // Replace Google Cloud Storage client and IStorageService with mock implementations
         // Remove the real StorageClient and IStorageService registrations

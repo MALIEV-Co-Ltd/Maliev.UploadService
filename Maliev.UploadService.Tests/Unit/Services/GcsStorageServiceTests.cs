@@ -2,6 +2,7 @@ using Maliev.Aspire.ServiceDefaults.IAM;
 using Google.Cloud.Storage.V1;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Tests.Fixtures;
+using Microsoft.Extensions.Configuration;
 using Moq;
 using Xunit;
 
@@ -9,6 +10,19 @@ namespace Maliev.UploadService.Tests.Unit.Services;
 
 public class GcsStorageServiceTests
 {
+    private static IConfiguration CreateTestConfig(string defaultBucket = "test-bucket")
+    {
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GoogleCloud:Buckets:Customers"] = defaultBucket,
+                ["GoogleCloud:Buckets:Financials"] = defaultBucket,
+                ["GoogleCloud:Buckets:Operations"] = defaultBucket,
+                ["GoogleCloud:Buckets:Temp"] = defaultBucket
+            })
+            .Build();
+    }
+
     [Fact]
     public async Task UploadFileAsync_ValidStream_UploadsSuccessfully()
     {
@@ -47,7 +61,8 @@ public class GcsStorageServiceTests
             });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
         var content = System.Text.Encoding.UTF8.GetBytes("Test file content");
         using var stream = new MemoryStream(content);
 
@@ -71,7 +86,8 @@ public class GcsStorageServiceTests
         // Arrange
         var mockClient = new Mock<StorageClient>();
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Simulate file already exists
         mockClient
@@ -95,7 +111,8 @@ public class GcsStorageServiceTests
         // Arrange
         var mockClient = new Mock<StorageClient>();
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Create a large stream (10MB) that we'll monitor
         var largeFileSize = 10 * 1024 * 1024;
@@ -160,7 +177,8 @@ public class GcsStorageServiceTests
             .ReturnsAsync(new Google.Apis.Storage.v1.Data.Object { Name = "test.txt" });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
         var exists = await service.FileExistsAsync("test.txt");
@@ -183,7 +201,8 @@ public class GcsStorageServiceTests
             .ThrowsAsync(new Google.GoogleApiException("Not Found"));
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
         var exists = await service.FileExistsAsync("nonexistent.txt");
@@ -242,7 +261,8 @@ public class GcsStorageServiceTests
             });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
         var content = System.Text.Encoding.UTF8.GetBytes("New content");
         using var stream = new MemoryStream(content);
 
@@ -289,7 +309,8 @@ public class GcsStorageServiceTests
             });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
         var content = System.Text.Encoding.UTF8.GetBytes("New content");
         using var stream = new MemoryStream(content);
 
@@ -319,7 +340,8 @@ public class GcsStorageServiceTests
             .Returns(Task.CompletedTask);
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
         await service.DeleteFileAsync("test-service/uploads/test.txt");
@@ -354,7 +376,8 @@ public class GcsStorageServiceTests
             });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
         var metadata = await service.GetFileMetadataAsync("test.txt");
@@ -385,7 +408,8 @@ public class GcsStorageServiceTests
             });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
         var metadata = await service.GetFileMetadataAsync("nonexistent.txt");
@@ -416,7 +440,8 @@ public class GcsStorageServiceTests
             .ThrowsAsync(exception);
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
         var metadata = await service.GetFileMetadataAsync("nonexistent.txt");
@@ -446,7 +471,8 @@ public class GcsStorageServiceTests
             .ThrowsAsync(exception);
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
         var exists = await service.FileExistsAsync("nonexistent.txt");
@@ -469,7 +495,8 @@ public class GcsStorageServiceTests
             .ThrowsAsync(new Google.GoogleApiException("GCS", "Resource Not Found"));
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
         var exists = await service.FileExistsAsync("nonexistent.txt");
@@ -492,7 +519,8 @@ public class GcsStorageServiceTests
             .ThrowsAsync(new Google.GoogleApiException("GCS", "File Not Found"));
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var service = new GcsStorageService(mockClient.Object, "test-bucket", mockHttpClientFactory.Object);
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
         var metadata = await service.GetFileMetadataAsync("nonexistent.txt");

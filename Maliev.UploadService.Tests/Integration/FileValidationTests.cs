@@ -1,7 +1,4 @@
-using Maliev.Aspire.ServiceDefaults.IAM;
-using System.Net;
 using System.Net.Http.Headers;
-using System.Text;
 using Maliev.UploadService.Tests.Fixtures;
 using Xunit;
 
@@ -15,30 +12,6 @@ public class FileValidationTests
     public FileValidationTests(TestWebApplicationFactory factory)
     {
         _factory = factory;
-    }
-
-    [Fact(Skip = "Requires ClamAV container - integration test for malware detection")]
-    public async Task UploadFile_MalwareDetected_ReturnsValidationError()
-    {
-        // Arrange
-        using var client = _factory.CreateClient();
-        var content = new MultipartFormDataContent();
-
-        // EICAR test file - standard antivirus test file
-        var eicarSignature = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
-        var fileContent = new ByteArrayContent(Encoding.ASCII.GetBytes(eicarSignature));
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
-        content.Add(fileContent, "File", "eicar.txt");
-        content.Add(new StringContent("test-service/uploads/eicar.txt"), "Path");
-        content.Add(new StringContent("test-service"), "ServiceName");
-
-        // Act
-        var response = await client.PostAsync("/upload/v1/uploads", content);
-
-        // Assert
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        var errorMessage = await response.Content.ReadAsStringAsync();
-        Assert.Contains("malware", errorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
