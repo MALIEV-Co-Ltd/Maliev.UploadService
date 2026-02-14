@@ -7,7 +7,7 @@ namespace Maliev.UploadService.Tests.Fixtures;
 
 public class TestDatabaseFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder().WithName("postgres:18-alpine")
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder().WithImage("postgres:18-alpine")
         .WithDatabase("uploadservice_test")
         .WithUsername("postgres")
         .WithPassword("postgres")
