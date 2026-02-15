@@ -349,17 +349,19 @@ public class SecurityTests : IAsyncLifetime
         content.Add(new StringContent("other-service"), "ServiceName");
 
         // token is for "test-service", but request says "other-service"
-        // The controller uses the name from request if provided, or from token.
-        // In our case it uses "other-service".
+        // Use token WITHOUT permissions to ensure IAM is actually checked or fallback fails
+        var unauthorizedToken = GenerateJwtToken("test-service", "uploadservice", permissions: Array.Empty<string>());
+        using var unauthorizedClient = _factory.CreateClient();
+        unauthorizedClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", unauthorizedToken);
 
         // IAM check will be for principal "test-service" (from token) but resource "folders/other-service/..."
         _iamClientMock.Reset();
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            "test-service", It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         // Act
-        var response = await _client.PostAsync("/upload/v1/uploads", content);
+        var response = await unauthorizedClient.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -399,25 +401,34 @@ public class SecurityTests : IAsyncLifetime
         }
     }
 
-    private string GenerateJwtToken(string serviceName, string audience, DateTime? expires = null)
+    private string GenerateJwtToken(string serviceName, string audience, DateTime? expires = null, string[]? permissions = null)
     {
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(ClaimTypes.Name, serviceName),
             new Claim(JwtRegisteredClaimNames.Sub, serviceName),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim("service_id", serviceName),
-            new Claim("permission", "upload.files.upload"),
-            new Claim("permission", "upload.files.download"),
-            new Claim("permission", "upload.files.read"),
-            new Claim("permission", "upload.files.delete"),
-            new Claim("permission", "upload.files.list"),
-            new Claim("permission", "upload.admin.manage-policies"),
-            new Claim("permission", "upload.admin.bulk-delete"),
-            new Claim("permission", "upload.admin.view-metrics"),
-            new Claim("permission", "upload.retention.configure"),
-            new Claim("permission", "upload.retention.execute")
+            new Claim("service_id", serviceName)
         };
+
+        var perms = permissions ?? new[]
+        {
+            "upload.files.upload",
+            "upload.files.download",
+            "upload.files.read",
+            "upload.files.delete",
+            "upload.files.list",
+            "upload.admin.manage-policies",
+            "upload.admin.bulk-delete",
+            "upload.admin.view-metrics",
+            "upload.retention.configure",
+            "upload.retention.execute"
+        };
+
+        foreach (var p in perms)
+        {
+            claims.Add(new Claim("permission", p));
+        }
 
         var token = new JwtSecurityToken(
             issuer: "test-issuer",

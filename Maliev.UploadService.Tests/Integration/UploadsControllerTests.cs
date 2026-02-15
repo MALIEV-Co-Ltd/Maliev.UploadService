@@ -148,25 +148,34 @@ public class UploadsControllerTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
-    private string GenerateJwtToken(string serviceName, string audience)
+    private string GenerateJwtToken(string serviceName, string audience, string[]? permissions = null)
     {
         var claimsList = new List<Claim>
         {
             new Claim(ClaimTypes.Name, serviceName),
             new Claim("service_name", serviceName),
             new Claim(JwtRegisteredClaimNames.Sub, serviceName),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim("permission", "upload.files.upload"),
-            new Claim("permission", "upload.files.download"),
-            new Claim("permission", "upload.files.read"),
-            new Claim("permission", "upload.files.delete"),
-            new Claim("permission", "upload.files.list"),
-            new Claim("permission", "upload.admin.manage-policies"),
-            new Claim("permission", "upload.admin.bulk-delete"),
-            new Claim("permission", "upload.admin.view-metrics"),
-            new Claim("permission", "upload.retention.configure"),
-            new Claim("permission", "upload.retention.execute")
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
+
+        var perms = permissions ?? new[]
+        {
+            "upload.files.upload",
+            "upload.files.download",
+            "upload.files.read",
+            "upload.files.delete",
+            "upload.files.list",
+            "upload.admin.manage-policies",
+            "upload.admin.bulk-delete",
+            "upload.admin.view-metrics",
+            "upload.retention.configure",
+            "upload.retention.execute"
+        };
+
+        foreach (var p in perms)
+        {
+            claimsList.Add(new Claim("permission", p));
+        }
 
         var token = new JwtSecurityToken(
             issuer: "test-issuer",
@@ -479,13 +488,18 @@ public class UploadsControllerTests : IAsyncLifetime
         content.Add(new StringContent("other-service/unauthorized.txt"), "Path");
         content.Add(new StringContent("test-service"), "ServiceName");
 
+        // Use token WITHOUT upload permission
+        var unauthorizedToken = GenerateJwtToken("test-service", "uploadservice", permissions: Array.Empty<string>());
+        using var unauthorizedClient = _factory.CreateClient();
+        unauthorizedClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", unauthorizedToken);
+
         // Explicitly deny in IAM for this test
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "test-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         // Act
-        var response = await _client.PostAsync("/upload/v1/uploads", content);
+        var response = await unauthorizedClient.PostAsync("/upload/v1/uploads", content);
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -503,13 +517,18 @@ public class UploadsControllerTests : IAsyncLifetime
             TotalSize = 1024
         };
 
+        // Use token WITHOUT upload permission
+        var unauthorizedToken = GenerateJwtToken("test-service", "uploadservice", permissions: Array.Empty<string>());
+        using var unauthorizedClient = _factory.CreateClient();
+        unauthorizedClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", unauthorizedToken);
+
         // Explicitly deny in IAM for this test
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "test-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         // Act
-        var response = await _client.PostAsJsonAsync("/upload/v1/uploads/resumable", request);
+        var response = await unauthorizedClient.PostAsJsonAsync("/upload/v1/uploads/resumable", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);

@@ -35,7 +35,7 @@ try
     builder.Services.AddAuthorization();
 
     // --- API Configuration ---
-    builder.AddDefaultCors(); // CORS from CORS:AllowedOrigins config
+    builder.AddStandardCors(); // CORS with fail-fast validation
     builder.AddDefaultApiVersioning(); // API versioning with URL segment reader
 
     // Add OpenAPI (must be in Program.cs for XML comments to work via source generator)
@@ -76,7 +76,7 @@ try
     builder.AddPostgresDbContext<UploadDbContext>("UploadDbContext", true, (Action<IServiceProvider, DbContextOptionsBuilder>?)null);
 
     // Cache: Connects + sets up Health Check
-    builder.AddRedisDistributedCache(instanceName: "upload:");
+    builder.AddStandardCache("upload:"); // Redis + in-memory fallback, memory-optimized
 
     // Messaging (RabbitMQ)
     // Note: Service Defaults handles host configuration from "rabbitmq" connection string
@@ -141,36 +141,42 @@ try
 
     if (googleCloudEnabled)
     {
+        // Create GoogleCredential: use service account key from environment (local dev)
+        // or fall back to Application Default Credentials (GKE Workload Identity in production)
+        builder.Services.AddSingleton<Google.Apis.Auth.OAuth2.GoogleCredential>(sp =>
+        {
+            var keyBase64 = builder.Configuration["GCP:ServiceAccountKeyBase64"];
+            if (!string.IsNullOrEmpty(keyBase64))
+            {
+                var keyJson = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(keyBase64));
+                return Google.Apis.Auth.OAuth2.CredentialFactory
+                    .FromJson<Google.Apis.Auth.OAuth2.ServiceAccountCredential>(keyJson)
+                    .ToGoogleCredential();
+            }
+
+            // Production: uses GKE Workload Identity via Application Default Credentials
+            return Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        });
+
         builder.Services.AddSingleton(sp =>
         {
-            return Google.Cloud.Storage.V1.StorageClient.Create();
+            var credential = sp.GetRequiredService<Google.Apis.Auth.OAuth2.GoogleCredential>();
+            return Google.Cloud.Storage.V1.StorageClient.Create(credential);
         });
+
         builder.Services.AddScoped<IStorageService>(sp =>
         {
             var storageClient = sp.GetRequiredService<Google.Cloud.Storage.V1.StorageClient>();
+            var credential = sp.GetRequiredService<Google.Apis.Auth.OAuth2.GoogleCredential>();
             var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
-            var bucketName = builder.Configuration["GoogleCloud:BucketName"] ?? "maliev-uploads";
-            return new GcsStorageService(storageClient, bucketName, httpClientFactory);
+            var config = sp.GetRequiredService<IConfiguration>();
+            return new GcsStorageService(storageClient, config, httpClientFactory, credential);
         });
     }
     else
     {
         builder.Services.AddScoped<IStorageService, MockStorageService>();
     }
-
-    builder.Services.AddSingleton<nClam.IClamClient>(sp =>
-    {
-        var clamHost = builder.Configuration["ClamAV:Host"] ?? "localhost";
-        var clamPort = int.Parse(builder.Configuration["ClamAV:Port"] ?? "3310");
-        var enabled = builder.Configuration.GetValue<bool>("ClamAV:Enabled", true);
-
-        if (!enabled)
-        {
-            return new DummyClamClient(sp.GetRequiredService<ILogger<DummyClamClient>>());
-        }
-
-        return new nClam.ClamClient(clamHost, clamPort);
-    });
 
     // T186: Register UploadMetrics for OpenTelemetry instrumentation (Constitution Principle XII)
     builder.Services.AddSingleton<UploadMetrics>();

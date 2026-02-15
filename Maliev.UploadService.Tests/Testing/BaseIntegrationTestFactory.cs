@@ -120,6 +120,9 @@ public class BaseIntegrationTestFactory<TProgram, TDbContext> : WebApplicationFa
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        builder.UseSetting("CORS:AllowedOrigins:0", "http://localhost:3000");
+        builder.UseSetting("Features:FailOpenOnIAMError", "true");
+
         // Use UseSetting for absolute priority and propagation in delegated factories
         builder.UseSetting($"ConnectionStrings:{DbConnectionStringName}", TestContainerFixture.PostgresContainer.GetConnectionString());
         builder.UseSetting("ConnectionStrings:redis", TestContainerFixture.RedisContainer.GetConnectionString());

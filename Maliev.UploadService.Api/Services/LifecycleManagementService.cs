@@ -10,13 +10,16 @@ namespace Maliev.UploadService.Api.Services;
 public class LifecycleManagementService : ILifecycleManagementService
 {
     private readonly UploadDbContext _context;
+    private readonly IStorageService _storageService;
     private readonly ILogger<LifecycleManagementService> _logger;
 
     public LifecycleManagementService(
         UploadDbContext context,
+        IStorageService storageService,
         ILogger<LifecycleManagementService> logger)
     {
         _context = context;
+        _storageService = storageService;
         _logger = logger;
     }
 
@@ -153,13 +156,26 @@ public class LifecycleManagementService : ILifecycleManagementService
         foreach (var file in expiredFiles)
         {
             _logger.LogInformation(
-                "File {FileId} at path {StoragePath} expired on {ExpiresAt}. Should be deleted from GCS.",
+                "File {FileId} at path {StoragePath} expired on {ExpiresAt}. Deleting from GCS and database.",
                 file.FileId, file.StoragePath, file.ExpiresAt);
 
-            // TODO: Implement actual GCS deletion via lifecycle rules or direct API call
-            // await _storageService.DeleteFileAsync(file.StoragePath, cancellationToken);
+            try
+            {
+                await _storageService.DeleteFileAsync(file.StoragePath, cancellationToken);
+                _context.FileMetadata.Remove(file);
+                // Also remove the Upload entry if possible, but FileMetadata is the main record here
+                // Note: This logic assumes 1:1 Upload:FileMetadata or that we are cleaning up metadata.
+                // Ideally we should check if other metadata points to same upload, but Upload is usually parent.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete expired file {FileId} at {StoragePath}", file.FileId, file.StoragePath);
+                // Continue to next file
+                continue;
+            }
         }
 
+        await _context.SaveChangesAsync(cancellationToken);
         return expiredFiles.Count;
     }
 
@@ -200,13 +216,20 @@ public class LifecycleManagementService : ILifecycleManagementService
                     "File {FileId} ({AgeInDays} days old) should transition from {CurrentClass} to {TargetClass}",
                     file.FileId, ageInDays, file.StorageClass, targetStorageClass);
 
-                // Update storage class in database
-                file.StorageClass = targetStorageClass;
-                updatedCount++;
+                try
+                {
+                    // Call GCS API to update the object's storage class
+                    // Note: We'll assume the storage service handles the actual transition details
+                    await _storageService.UpdateStorageClassAsync(file.StoragePath, targetStorageClass, cancellationToken);
 
-                // TODO: Implement actual GCS storage class update
-                // In production, this would call GCS API to update the object's storage class
-                // await _gcsClient.UpdateStorageClassAsync(file.StoragePath, targetStorageClass, cancellationToken);
+                    // Update storage class in database
+                    file.StorageClass = targetStorageClass;
+                    updatedCount++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to update storage class for file {FileId} to {TargetClass}", file.FileId, targetStorageClass);
+                }
             }
         }
 
@@ -219,4 +242,3 @@ public class LifecycleManagementService : ILifecycleManagementService
         return updatedCount;
     }
 }
-

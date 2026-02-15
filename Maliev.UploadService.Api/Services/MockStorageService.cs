@@ -108,4 +108,11 @@ public class MockStorageService : IStorageService
             StoragePath = endByte + 1 >= totalSize ? "mock-path" : null
         });
     }
+
+    /// <inheritdoc />
+    public Task UpdateStorageClassAsync(string storagePath, string targetStorageClass, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("MOCK: Updating storage class of {StoragePath} to {StorageClass}", storagePath, targetStorageClass);
+        return Task.CompletedTask;
+    }
 }

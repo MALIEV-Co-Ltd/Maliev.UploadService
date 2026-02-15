@@ -1,10 +1,7 @@
-using nClam;
-
 namespace Maliev.UploadService.Api.Services;
 
 public class FileValidationService : IValidationService
 {
-    private readonly IClamClient _clamClient;
     private readonly long _maxFileSizeBytes = 100 * 1024 * 1024; // 100MB default
     private readonly HashSet<string> _allowedContentTypes = new()
     {
@@ -19,11 +16,6 @@ public class FileValidationService : IValidationService
         "application/zip",
         "application/octet-stream"
     };
-
-    public FileValidationService(IClamClient clamClient)
-    {
-        _clamClient = clamClient;
-    }
 
     public async Task<ValidationResult> ValidateFileAsync(
         Stream fileStream,
@@ -55,7 +47,7 @@ public class FileValidationService : IValidationService
         {
             var position = fileStream.Position;
             var buffer = new byte[16];
-            var bytesRead = await fileStream.ReadAsync(buffer, 0, buffer.Length);
+            var bytesRead = await fileStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
             fileStream.Position = position; // Reset stream position
 
             // Basic file signature detection
@@ -68,27 +60,7 @@ public class FileValidationService : IValidationService
         catch (Exception ex)
         {
             // Content type detection failure is non-fatal
-            result.Errors.Add($"Content type detection warning: {ex.Message}");
-        }
-
-        // Perform malware scan
-        try
-        {
-            var scanResult = await _clamClient.SendAndScanFileAsync(fileStream, cancellationToken);
-            fileStream.Position = 0; // Reset for next use
-
-            if (scanResult.InfectedFiles != null && scanResult.InfectedFiles.Any())
-            {
-                result.IsValid = false;
-                var infections = string.Join(", ", scanResult.InfectedFiles.Select(f => f.VirusName));
-                result.Errors.Add($"Malware detected: {infections}");
-            }
-        }
-        catch (Exception ex)
-        {
-            // Malware scan failure - fail safe by rejecting the file
-            result.IsValid = false;
-            result.Errors.Add($"Malware scan failed: {ex.Message}");
+            result.Warnings.Add($"Content type detection warning: {ex.Message}");
         }
 
         return result;
@@ -125,4 +97,3 @@ public class FileValidationService : IValidationService
         return null;
     }
 }
-

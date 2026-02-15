@@ -1,0 +1,97 @@
+# Maliev.UploadService Developer Guidelines for Agents
+
+This document provides essential instructions for AI agents working on the Maliev.UploadService repository.
+
+## 1. Environment & Build
+
+- **Platform:** .NET 10.0 (C#)
+- **Framework:** ASP.NET Core Web API
+- **Solution File:** `Maliev.UploadService.slnx` (Treat as `.sln`)
+
+### Commands
+
+| Action | Command |
+|--------|---------|
+| **Build Solution** | `dotnet build` |
+| **Run All Tests** | `dotnet test` |
+| **Run Specific Test** | `dotnet test --filter "FullyQualifiedName~Namespace.ClassName.MethodName"` |
+| **Run Tests in File** | `dotnet test --filter "FullyQualifiedName~Namespace.ClassName"` |
+| **Clean** | `dotnet clean` |
+| **Restore** | `dotnet restore` |
+| **Format Code** | `dotnet format` |
+
+**Important:** `TreatWarningsAsErrors` is enabled. All warnings must be resolved for the build to pass.
+
+## 2. Project Structure
+
+- **`Maliev.UploadService.Api`**: Main Web API project.
+  - `Controllers/`: API Endpoints (v1/).
+  - `Services/`: Business logic (Storage, Auth, Validation).
+  - `Data/`: Seed data.
+  - `Models/`: DTOs (Requests/Responses).
+- **`Maliev.UploadService.Data`**: Data Access Layer.
+  - `Entities/`: EF Core entities.
+  - `UploadDbContext.cs`: DB Context.
+- **`Maliev.UploadService.Tests`**: Testing suite (xUnit).
+  - `Unit/`: Unit tests.
+  - `Integration/`: Integration tests using Testcontainers.
+
+## 3. Code Style & Conventions
+
+### General
+- **Formatting:** Follow standard C# conventions (K&R braces, 4-space indentation).
+- **Naming:**
+  - Classes/Methods/Properties: `PascalCase`
+  - Local Variables/Parameters: `camelCase`
+  - Private Fields: `_camelCase` (e.g., `_storageService`)
+- **Async/Await:** Use `async/await` for all I/O-bound operations. Avoid `.Result` or `.Wait()`.
+- **Var:** Use `var` when the type is obvious from the right-hand side.
+
+### API Controllers
+- Use `[ApiController]` and `[Route("upload/v{version:apiVersion}/[controller]")]`.
+- Inherit from `ControllerBase`.
+- Use `[HttpGet]`, `[HttpPost]`, etc., with explicit routes if needed.
+- Return `IActionResult` (e.g., `Ok()`, `NotFound()`, `Forbid()`).
+- Use `[ProducesResponseType]` for documentation.
+- **Authorization:** Use `[RequirePermission(UploadPermissions.X, RequireLiveCheck = true)]`.
+
+### Dependency Injection
+- Use constructor injection.
+- Register services in `Program.cs`.
+- Use scoped lifetime for services by default (`builder.Services.AddScoped<I..., ...>`).
+
+### Database (EF Core)
+- Entities in `Maliev.UploadService.Data/Entities`.
+- Use `UploadDbContext`.
+- Always use `await _dbContext.SaveChangesAsync(cancellationToken)`.
+
+### Logging & Observability
+- Inject `ILogger<T>`.
+- Use structured logging (e.g., `_logger.LogInformation("Processing {UploadId}", uploadId)`).
+- Use `LogFileEventAsync` for audit trails in controllers.
+
+### Error Handling
+- Use `try-catch` in services/controllers if specific handling is needed.
+- Global exception handling is configured via middleware.
+- Throw specific exceptions (e.g., `InvalidOperationException`, `ArgumentException`) which middleware maps to HTTP status codes.
+
+## 4. Testing Guidelines
+
+- **Framework:** xUnit
+- **Mocking:** Moq
+- **Integration Tests:** Use `Testcontainers` (Postgres, RabbitMQ, Redis).
+- **Naming:** `MethodName_Condition_ExpectedResult` (e.g., `GetFileMetadata_WhenFileExists_ReturnsMetadata`).
+- **Structure:** AAA (Arrange, Act, Assert).
+
+### Example: Running a Single Test
+```bash
+dotnet test --filter "FullyQualifiedName~Maliev.UploadService.Tests.Integration.FilesControllerTests.GetFileMetadata_Success"
+```
+
+## 5. Agent Behavior Rules
+
+- **Safety First:** verify `Directory.Build.props` or `csproj` settings before changing build configurations.
+- **Pathing:** Always use **absolute paths** for file operations.
+- **Verification:** ALWAYS run `dotnet build` after making changes to ensure no compilation errors.
+- **Testing:** If modifying logic, run relevant tests to ensure no regression.
+- **No Hallucination:** Do not invent libraries or helper methods. Check existing `Extensions/` or `Services/` first.

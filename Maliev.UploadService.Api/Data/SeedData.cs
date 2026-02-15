@@ -192,17 +192,85 @@ public static class SeedData
             }
         };
 
+        // Bucket-specific retention policies for multi-bucket GCS architecture
+        var customerDocumentsPolicy = new RetentionPolicy
+        {
+            PolicyId = Guid.NewGuid().ToString(),
+            PolicyName = "Customer Documents (7 years)",
+            RetentionDays = 2555, // ~7 years
+            ApplyToPathPrefix = "customer-",
+            ServiceId = null, // Applies across services
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            StorageClassTransitions = new List<StorageClassTransition>
+            {
+                new StorageClassTransition { Days = 30, StorageClass = "NEARLINE" },
+                new StorageClassTransition { Days = 90, StorageClass = "COLDLINE" }
+            }
+        };
+
+        var financialRecordsPolicy = new RetentionPolicy
+        {
+            PolicyId = Guid.NewGuid().ToString(),
+            PolicyName = "Financial Records (Permanent)",
+            RetentionDays = 0, // Indefinite
+            ApplyToPathPrefix = null, // Matched by path containing /invoices/, /receipts/, /statements/
+            ServiceId = "invoice-service",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            StorageClassTransitions = new List<StorageClassTransition>
+            {
+                new StorageClassTransition { Days = 365, StorageClass = "COLDLINE" },
+                new StorageClassTransition { Days = 1825, StorageClass = "ARCHIVE" } // 5 years
+            }
+        };
+
+        var operationsPolicy = new RetentionPolicy
+        {
+            PolicyId = Guid.NewGuid().ToString(),
+            PolicyName = "Operations Documents (3 years)",
+            RetentionDays = 1095, // ~3 years
+            ApplyToPathPrefix = null, // Matched by path containing /orders/, /materials/, /quotations/
+            ServiceId = "order-service",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            StorageClassTransitions = new List<StorageClassTransition>
+            {
+                new StorageClassTransition { Days = 30, StorageClass = "NEARLINE" },
+                new StorageClassTransition { Days = 90, StorageClass = "COLDLINE" }
+            }
+        };
+
+        var tempDevPolicy = new RetentionPolicy
+        {
+            PolicyId = Guid.NewGuid().ToString(),
+            PolicyName = "Temporary Files (30 days auto-delete)",
+            RetentionDays = 30,
+            ApplyToPathPrefix = "ai-extraction/",
+            ServiceId = null,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            StorageClassTransitions = null // STANDARD only, auto-delete after 30 days
+        };
+
         context.RetentionPolicies.AddRange(
             shortTermPolicy,
             mediumTermPolicy,
             longTermPolicy,
-            indefinitePolicy
+            indefinitePolicy,
+            customerDocumentsPolicy,
+            financialRecordsPolicy,
+            operationsPolicy,
+            tempDevPolicy
         );
 
         await context.SaveChangesAsync();
 
         logger.LogInformation("Successfully seeded {AuthPolicyCount} authorization policies and {RetentionPolicyCount} retention policies",
-            3, 4);
+            3, 8);
     }
 }
-

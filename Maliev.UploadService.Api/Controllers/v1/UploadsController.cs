@@ -12,6 +12,7 @@ using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 
 namespace Maliev.UploadService.Api.Controllers.v1;
 
@@ -23,7 +24,6 @@ public class UploadsController : ControllerBase
 {
     private readonly IValidationService _validationService;
     private readonly IStorageService _storageService;
-    private readonly IAuthorizationPolicyService _authorizationService;
     private readonly ILifecycleManagementService _lifecycleService;
     private readonly UploadDbContext _dbContext;
     private readonly ILogger<UploadsController> _logger;
@@ -32,7 +32,6 @@ public class UploadsController : ControllerBase
     public UploadsController(
         IValidationService validationService,
         IStorageService storageService,
-        IAuthorizationPolicyService authorizationService,
         ILifecycleManagementService lifecycleService,
         UploadDbContext dbContext,
         ILogger<UploadsController> logger,
@@ -40,7 +39,6 @@ public class UploadsController : ControllerBase
     {
         _validationService = validationService;
         _storageService = storageService;
-        _authorizationService = authorizationService;
         _lifecycleService = lifecycleService;
         _dbContext = dbContext;
         _logger = logger;
@@ -92,20 +90,6 @@ public class UploadsController : ControllerBase
                 return BadRequest(new { error = $"Invalid path: {ex.Message}" });
             }
 
-            // NOTE: Manual check retained for Legacy Fallback logic until decommissioning
-            var canUpload = await _authorizationService.CanUploadToPathAsync(
-                serviceName,
-                sanitizedPath,
-                cancellationToken);
-
-            if (!canUpload)
-            {
-                _logger.LogWarning("Unauthorized upload attempt by service {ServiceName} to path {Path}",
-                    serviceName, sanitizedPath);
-                await LogUploadEventAsync(uploadId, serviceName, sanitizedPath, "Unauthorized", cancellationToken);
-                return Forbid();
-            }
-
             // T103: Check for path collision (FR-010)
             var existingUpload = await _dbContext.Uploads
                 .FirstOrDefaultAsync(u => u.StoragePath == sanitizedPath, cancellationToken);
@@ -143,6 +127,12 @@ public class UploadsController : ControllerBase
                 request.File.Length,
                 cancellationToken);
 
+            if (validationResult.Warnings.Count > 0)
+            {
+                _logger.LogWarning("File validation warnings for {FileName}: {Warnings}",
+                    request.File.FileName, string.Join(", ", validationResult.Warnings));
+            }
+
             if (!validationResult.IsValid)
             {
                 _logger.LogWarning("File validation failed for {FileName}: {Errors}",
@@ -153,6 +143,16 @@ public class UploadsController : ControllerBase
 
             // T077: GCS upload
             fileStream.Position = 0; // Reset stream after validation
+
+            // Calculate checksum (SHA256)
+            string checksum;
+            using (var sha256 = SHA256.Create())
+            {
+                var hashBytes = await sha256.ComputeHashAsync(fileStream, cancellationToken);
+                checksum = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+            }
+            fileStream.Position = 0; // Reset stream after hashing
+
             var uploadResult = await _storageService.UploadFileAsync(
                 fileStream,
                 sanitizedPath,
@@ -187,7 +187,7 @@ public class UploadsController : ControllerBase
                 VersionETag = uploadResult.ETag,
                 FileSize = uploadResult.SizeBytes,
                 ContentType = uploadResult.ContentType,
-                Checksum = "TODO", // TODO: Calculate checksum
+                Checksum = checksum,
                 UploadedAt = uploadResult.UploadedAt,
                 Metadata = request.Metadata != null
                     ? new Dictionary<string, string> { { "custom", request.Metadata } }
@@ -319,19 +319,6 @@ public class UploadsController : ControllerBase
             // Path sanitization
             var sanitizedPath = request.Path.SanitizePath();
 
-            // Authorization check
-            var canUpload = await _authorizationService.CanUploadToPathAsync(
-                serviceName,
-                sanitizedPath,
-                cancellationToken);
-
-            if (!canUpload)
-            {
-                _logger.LogWarning("Unauthorized resumable upload attempt by service {ServiceName} to path {Path}",
-                    serviceName, sanitizedPath);
-                return Forbid();
-            }
-
             // Initiate resumable upload session with GCS
             var session = await _storageService.InitiateResumableUploadAsync(
                 sanitizedPath,
@@ -455,7 +442,7 @@ public class UploadsController : ControllerBase
                     VersionETag = gcsMetadata?.ETag ?? Guid.NewGuid().ToString(),
                     FileSize = upload.FileSize,
                     ContentType = upload.ContentType,
-                    Checksum = "TODO",
+                    Checksum = "TODO", // Checksum calculation for resumable uploads requires assembling chunks or client-provided checksum
                     UploadedAt = DateTime.UtcNow
                 };
 

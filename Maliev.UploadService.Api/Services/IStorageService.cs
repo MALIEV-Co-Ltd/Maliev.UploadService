@@ -39,6 +39,11 @@ public interface IStorageService
         long endByte,
         long totalSize,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Updates the storage class of an existing file (FR-015)
+    /// </summary>
+    Task UpdateStorageClassAsync(string storagePath, string targetStorageClass, CancellationToken cancellationToken = default);
 }
 
 public class StorageFileMetadata

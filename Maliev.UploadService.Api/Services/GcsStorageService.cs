@@ -1,18 +1,59 @@
 using Google.Cloud.Storage.V1;
+using Microsoft.Extensions.Configuration;
 
 namespace Maliev.UploadService.Api.Services;
 
 public class GcsStorageService : IStorageService
 {
     private readonly StorageClient _storageClient;
-    private readonly string _bucketName;
+    private readonly Google.Apis.Auth.OAuth2.GoogleCredential _credential;
+    private readonly Dictionary<string, string> _buckets;
+    private readonly string _defaultBucket;
     private readonly IHttpClientFactory _httpClientFactory;
 
-    public GcsStorageService(StorageClient storageClient, string bucketName, IHttpClientFactory httpClientFactory)
+    public GcsStorageService(StorageClient storageClient, IConfiguration config, IHttpClientFactory httpClientFactory, Google.Apis.Auth.OAuth2.GoogleCredential credential)
     {
         _storageClient = storageClient;
-        _bucketName = bucketName;
         _httpClientFactory = httpClientFactory;
+        _credential = credential;
+
+        // Load bucket names from config (GoogleCloud:Buckets section)
+        _buckets = config.GetSection("GoogleCloud:Buckets")
+            .GetChildren()
+            .Where(x => x.Value != null)
+            .ToDictionary(x => x.Key.ToLowerInvariant(), x => x.Value!);
+
+        _defaultBucket = _buckets.GetValueOrDefault("temp", "maliev-temp");
+    }
+
+    /// <summary>
+    /// Routes a storage path to the correct bucket based on path conventions.
+    /// </summary>
+    private string GetBucketForPath(string storagePath)
+    {
+        // Customer documents
+        if (storagePath.StartsWith("customer-", StringComparison.OrdinalIgnoreCase) ||
+            storagePath.Contains("/customers/", StringComparison.OrdinalIgnoreCase) ||
+            storagePath.Contains("/onboarding/", StringComparison.OrdinalIgnoreCase) ||
+            storagePath.Contains("/kyc/", StringComparison.OrdinalIgnoreCase))
+            return _buckets.GetValueOrDefault("customers", "maliev-customers");
+
+        // Financial documents
+        if (storagePath.Contains("/invoices/", StringComparison.OrdinalIgnoreCase) ||
+            storagePath.Contains("/receipts/", StringComparison.OrdinalIgnoreCase) ||
+            storagePath.Contains("/statements/", StringComparison.OrdinalIgnoreCase) ||
+            storagePath.Contains("/financials/", StringComparison.OrdinalIgnoreCase))
+            return _buckets.GetValueOrDefault("financials", "maliev-financials");
+
+        // Operations documents
+        if (storagePath.Contains("/orders/", StringComparison.OrdinalIgnoreCase) ||
+            storagePath.Contains("/materials/", StringComparison.OrdinalIgnoreCase) ||
+            storagePath.Contains("/quotations/", StringComparison.OrdinalIgnoreCase) ||
+            storagePath.Contains("/suppliers/", StringComparison.OrdinalIgnoreCase))
+            return _buckets.GetValueOrDefault("operations", "maliev-operations");
+
+        // Default to temp bucket for AI extraction, temp files, and anything unmatched
+        return _defaultBucket;
     }
 
     public async Task<StorageUploadResult> UploadFileAsync(
@@ -22,6 +63,8 @@ public class GcsStorageService : IStorageService
         bool overwrite = false,
         CancellationToken cancellationToken = default)
     {
+        var bucketName = GetBucketForPath(storagePath);
+
         // Check if file exists and overwrite is not allowed
         if (!overwrite)
         {
@@ -33,18 +76,13 @@ public class GcsStorageService : IStorageService
         }
 
         // Upload file using streaming to avoid loading entire file into memory
-        var uploadOptions = new UploadObjectOptions
-        {
-            PredefinedAcl = PredefinedObjectAcl.Private
-        };
-
+        // No PredefinedAcl — buckets use Uniform Bucket-Level Access (UBLA)
         var uploadedObject = await _storageClient.UploadObjectAsync(
-            _bucketName,
+            bucketName,
             storagePath,
             contentType,
             fileStream,
-            uploadOptions,
-            cancellationToken);
+            cancellationToken: cancellationToken);
 
         return new StorageUploadResult
         {
@@ -58,9 +96,10 @@ public class GcsStorageService : IStorageService
 
     public async Task<bool> FileExistsAsync(string storagePath, CancellationToken cancellationToken = default)
     {
+        var bucketName = GetBucketForPath(storagePath);
         try
         {
-            await _storageClient.GetObjectAsync(_bucketName, storagePath, cancellationToken: cancellationToken);
+            await _storageClient.GetObjectAsync(bucketName, storagePath, cancellationToken: cancellationToken);
             return true;
         }
         catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound || ex.Error?.Code == 404)
@@ -75,7 +114,8 @@ public class GcsStorageService : IStorageService
 
     public async Task DeleteFileAsync(string storagePath, CancellationToken cancellationToken = default)
     {
-        await _storageClient.DeleteObjectAsync(_bucketName, storagePath, cancellationToken: cancellationToken);
+        var bucketName = GetBucketForPath(storagePath);
+        await _storageClient.DeleteObjectAsync(bucketName, storagePath, cancellationToken: cancellationToken);
     }
 
     public async Task<string> GenerateSignedUrlAsync(
@@ -83,25 +123,37 @@ public class GcsStorageService : IStorageService
         TimeSpan expiration,
         CancellationToken cancellationToken = default)
     {
-        // Generate signed URL using V4 signing
-        var credential = await Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefaultAsync();
-        var urlSigner = UrlSigner.FromCredential(credential);
+        var bucketName = GetBucketForPath(storagePath);
 
-        var signedUrl = await urlSigner.SignAsync(
-            _bucketName,
-            storagePath,
-            expiration,
-            HttpMethod.Get,
-            cancellationToken: cancellationToken);
+        try
+        {
+            // Generate signed URL using V4 signing
+            // Use the injected credential which handles both Service Account keys and GKE Workload Identity
+            var urlSigner = UrlSigner.FromCredential(_credential);
 
-        return signedUrl;
+            var signedUrl = await urlSigner.SignAsync(
+                bucketName,
+                storagePath,
+                expiration,
+                HttpMethod.Get,
+                cancellationToken: cancellationToken);
+
+            return signedUrl;
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("UserCredential is not supported for signing"))
+        {
+            // Fallback for local development environments where ADC is a User Account
+            // Return a direct storage URL (user must have permissions to access)
+            return $"https://storage.googleapis.com/{bucketName}/{storagePath}";
+        }
     }
 
     public async Task<StorageFileMetadata?> GetFileMetadataAsync(string storagePath, CancellationToken cancellationToken = default)
     {
+        var bucketName = GetBucketForPath(storagePath);
         try
         {
-            var obj = await _storageClient.GetObjectAsync(_bucketName, storagePath, cancellationToken: cancellationToken);
+            var obj = await _storageClient.GetObjectAsync(bucketName, storagePath, cancellationToken: cancellationToken);
 
             return new StorageFileMetadata
             {
@@ -131,17 +183,18 @@ public class GcsStorageService : IStorageService
         long totalSize,
         CancellationToken cancellationToken = default)
     {
+        var bucketName = GetBucketForPath(storagePath);
+
         // Create object metadata
         var objectMetadata = new Google.Apis.Storage.v1.Data.Object
         {
             Name = storagePath,
             ContentType = contentType,
-            Bucket = _bucketName
+            Bucket = bucketName
         };
 
         // Initiate resumable upload using GCS API
-        // GCS resumable upload API returns a session URI that can be used to upload chunks
-        var uploadUri = await InitiateGcsResumableUploadAsync(objectMetadata, cancellationToken);
+        var uploadUri = await InitiateGcsResumableUploadAsync(bucketName, objectMetadata, cancellationToken);
 
         return new ResumableUploadSession
         {
@@ -181,7 +234,6 @@ public class GcsStorageService : IStorageService
         {
             // Upload complete
             var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            // Parse GCS response to get object name
             var uploadedObject = System.Text.Json.JsonSerializer.Deserialize<Google.Apis.Storage.v1.Data.Object>(responseContent);
 
             return new ResumableUploadProgress
@@ -213,21 +265,17 @@ public class GcsStorageService : IStorageService
         }
     }
 
-    private async Task<string> InitiateGcsResumableUploadAsync(Google.Apis.Storage.v1.Data.Object objectMetadata, CancellationToken cancellationToken)
+    private async Task<string> InitiateGcsResumableUploadAsync(string bucketName, Google.Apis.Storage.v1.Data.Object objectMetadata, CancellationToken cancellationToken)
     {
         // Use HttpClient to initiate resumable upload via GCS JSON API
         var httpClient = _httpClientFactory.CreateClient();
 
         // Get GCS upload endpoint
-        var uploadUrl = $"https://storage.googleapis.com/upload/storage/v1/b/{_bucketName}/o?uploadType=resumable";
+        var uploadUrl = $"https://storage.googleapis.com/upload/storage/v1/b/{bucketName}/o?uploadType=resumable";
 
         var request = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
         var jsonContent = System.Text.Json.JsonSerializer.Serialize(objectMetadata);
         request.Content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
-
-        // Add authentication header if possible
-        // In a real scenario, we'd use the ServiceAccountCredential correctly.
-        // For now, we'll assume the HttpClient is already configured or we're in a dev environment.
 
         var response = await httpClient.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -261,5 +309,22 @@ public class GcsStorageService : IStorageService
         }
 
         return 0;
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateStorageClassAsync(string storagePath, string targetStorageClass, CancellationToken cancellationToken = default)
+    {
+        var bucketName = GetBucketForPath(storagePath);
+        var obj = new Google.Apis.Storage.v1.Data.Object
+        {
+            Name = storagePath,
+            Bucket = bucketName,
+            StorageClass = targetStorageClass
+        };
+
+        await _storageClient.PatchObjectAsync(
+            obj,
+            new PatchObjectOptions(),
+            cancellationToken);
     }
 }

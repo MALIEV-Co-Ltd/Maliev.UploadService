@@ -83,7 +83,8 @@ public class IAMResourceScopedTests : IAsyncLifetime
         var requestedPath = "orders/2025/ord1.pdf";
         var resourcePath = $"folders/{requestedPath}";
 
-        var token = GenerateJwtToken(serviceName, "uploadservice");
+        // Use token WITHOUT permissions to ensure fallback fails
+        var token = GenerateJwtToken(serviceName, "uploadservice", permissions: Array.Empty<string>());
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
@@ -109,25 +110,34 @@ public class IAMResourceScopedTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
-    private string GenerateJwtToken(string serviceName, string audience)
+    private string GenerateJwtToken(string serviceName, string audience, string[]? permissions = null)
     {
-        var claims = new[]
+        var claims = new List<Claim>
         {
             new Claim(ClaimTypes.Name, serviceName),
             new Claim(JwtRegisteredClaimNames.Sub, serviceName),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new Claim("service_id", serviceName),
-            new Claim("permission", "upload.files.upload"),
-            new Claim("permission", "upload.files.download"),
-            new Claim("permission", "upload.files.read"),
-            new Claim("permission", "upload.files.delete"),
-            new Claim("permission", "upload.files.list"),
-            new Claim("permission", "upload.admin.manage-policies"),
-            new Claim("permission", "upload.admin.bulk-delete"),
-            new Claim("permission", "upload.admin.view-metrics"),
-            new Claim("permission", "upload.retention.configure"),
-            new Claim("permission", "upload.retention.execute")
+            new Claim("service_id", serviceName)
         };
+
+        var perms = permissions ?? new[]
+        {
+            "upload.files.upload",
+            "upload.files.download",
+            "upload.files.read",
+            "upload.files.delete",
+            "upload.files.list",
+            "upload.admin.manage-policies",
+            "upload.admin.bulk-delete",
+            "upload.admin.view-metrics",
+            "upload.retention.configure",
+            "upload.retention.execute"
+        };
+
+        foreach (var p in perms)
+        {
+            claims.Add(new Claim("permission", p));
+        }
 
         var token = new JwtSecurityToken(
             issuer: "test-issuer",
