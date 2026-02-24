@@ -1,5 +1,6 @@
 using Asp.Versioning;
 using Maliev.Aspire.ServiceDefaults.Authorization;
+using Maliev.MessagingContracts.Contracts.Uploads;
 using Maliev.MessagingContracts.Generated;
 using Maliev.UploadService.Api.Extensions;
 using Maliev.UploadService.Api.Models.Requests;

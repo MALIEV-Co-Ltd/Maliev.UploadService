@@ -1,3 +1,4 @@
+using Maliev.MessagingContracts.Contracts.Uploads;
 using Maliev.MessagingContracts.Generated;
 using Maliev.UploadService.Api.BackgroundServices;
 using Maliev.UploadService.Api.Metrics;
