@@ -90,7 +90,8 @@ public class GcsStorageService : IStorageService
             ContentType = uploadedObject.ContentType,
             SizeBytes = (long)(uploadedObject.Size ?? 0),
             UploadedAt = uploadedObject.TimeCreatedDateTimeOffset?.UtcDateTime ?? DateTime.UtcNow,
-            ETag = uploadedObject.ETag
+            ETag = uploadedObject.ETag,
+            Md5Hash = uploadedObject.Md5Hash
         };
     }
 
@@ -161,7 +162,8 @@ public class GcsStorageService : IStorageService
                 ContentType = obj.ContentType,
                 SizeBytes = (long)(obj.Size ?? 0),
                 CreatedAt = obj.TimeCreatedDateTimeOffset?.UtcDateTime ?? DateTime.UtcNow,
-                ETag = obj.ETag
+                ETag = obj.ETag,
+                Md5Hash = obj.Md5Hash
             };
         }
         catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == System.Net.HttpStatusCode.NotFound || ex.Error?.Code == 404)
@@ -217,13 +219,12 @@ public class GcsStorageService : IStorageService
     {
         var httpClient = _httpClientFactory.CreateClient();
 
-        // Read chunk into memory (needed for Content-Range calculation)
-        var chunkData = new byte[endByte - startByte + 1];
-        await chunkStream.ReadExactlyAsync(chunkData, cancellationToken);
+        // Calculate expected content length
+        var contentLength = endByte - startByte + 1;
 
-        // Create request with proper headers for resumable upload
+        // Create request with proper headers for resumable upload and stream directly
         var request = new HttpRequestMessage(HttpMethod.Put, sessionUri);
-        request.Content = new ByteArrayContent(chunkData);
+        request.Content = new StreamContent(chunkStream, (int)contentLength);
         request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
         request.Content.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(startByte, endByte, totalSize);
 

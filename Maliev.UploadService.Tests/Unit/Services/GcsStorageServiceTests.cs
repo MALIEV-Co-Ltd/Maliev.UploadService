@@ -61,7 +61,7 @@ public class GcsStorageServiceTests
             });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
         var content = System.Text.Encoding.UTF8.GetBytes("Test file content");
         using var stream = new MemoryStream(content);
@@ -86,7 +86,7 @@ public class GcsStorageServiceTests
         // Arrange
         var mockClient = new Mock<StorageClient>();
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Simulate file already exists
@@ -111,7 +111,7 @@ public class GcsStorageServiceTests
         // Arrange
         var mockClient = new Mock<StorageClient>();
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Create a large stream (10MB) that we'll monitor
@@ -177,7 +177,7 @@ public class GcsStorageServiceTests
             .ReturnsAsync(new Google.Apis.Storage.v1.Data.Object { Name = "test.txt" });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
@@ -201,7 +201,7 @@ public class GcsStorageServiceTests
             .ThrowsAsync(new Google.GoogleApiException("Not Found"));
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
@@ -261,7 +261,7 @@ public class GcsStorageServiceTests
             });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
         var content = System.Text.Encoding.UTF8.GetBytes("New content");
         using var stream = new MemoryStream(content);
@@ -309,7 +309,7 @@ public class GcsStorageServiceTests
             });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
         var content = System.Text.Encoding.UTF8.GetBytes("New content");
         using var stream = new MemoryStream(content);
@@ -340,7 +340,7 @@ public class GcsStorageServiceTests
             .Returns(Task.CompletedTask);
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
@@ -372,11 +372,12 @@ public class GcsStorageServiceTests
                 ContentType = "text/plain",
                 Size = 1024,
                 TimeCreatedDateTimeOffset = new DateTimeOffset(createdAt),
-                ETag = "etag123"
+                ETag = "etag123",
+                Md5Hash = "mock-md5"
             });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
@@ -408,7 +409,7 @@ public class GcsStorageServiceTests
             });
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
@@ -440,7 +441,7 @@ public class GcsStorageServiceTests
             .ThrowsAsync(exception);
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
@@ -471,7 +472,7 @@ public class GcsStorageServiceTests
             .ThrowsAsync(exception);
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
@@ -495,7 +496,7 @@ public class GcsStorageServiceTests
             .ThrowsAsync(new Google.GoogleApiException("GCS", "Resource Not Found"));
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
@@ -519,7 +520,7 @@ public class GcsStorageServiceTests
             .ThrowsAsync(new Google.GoogleApiException("GCS", "File Not Found"));
 
         var mockHttpClientFactory = new Mock<IHttpClientFactory>();
-        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
         var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
 
         // Act
@@ -529,5 +530,3 @@ public class GcsStorageServiceTests
         Assert.Null(metadata);
     }
 }
-
-

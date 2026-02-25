@@ -32,7 +32,8 @@ public class MockStorageService : IStorageService
             ContentType = contentType,
             SizeBytes = fileStream.Length,
             UploadedAt = DateTime.UtcNow,
-            ETag = Guid.NewGuid().ToString()
+            ETag = Guid.NewGuid().ToString(),
+            Md5Hash = "mock-md5"
         };
     }
 
@@ -70,7 +71,8 @@ public class MockStorageService : IStorageService
             ContentType = "application/octet-stream",
             SizeBytes = 100,
             CreatedAt = DateTime.UtcNow,
-            ETag = "mock-etag"
+            ETag = "mock-etag",
+            Md5Hash = "mock-md5-hash"
         });
     }
 

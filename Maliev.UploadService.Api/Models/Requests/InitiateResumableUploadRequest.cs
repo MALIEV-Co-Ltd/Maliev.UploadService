@@ -28,5 +28,10 @@ public class InitiateResumableUploadRequest
 
     [MaxLength(50)]
     public string? RetentionPolicyId { get; set; }
-}
 
+    /// <summary>
+    /// Optional client-provided checksum (MD5/SHA256)
+    /// </summary>
+    [MaxLength(64)]
+    public string? Checksum { get; set; }
+}

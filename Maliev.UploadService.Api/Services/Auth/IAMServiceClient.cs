@@ -76,4 +76,9 @@ public class IamServiceClient : IIamServiceClient
     {
         return Task.FromResult(Enumerable.Empty<string>());
     }
+
+    public Task<IEnumerable<string>> GetAuthorizedResourcesAsync(string principalId, string permissionId, string resourceType, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Enumerable.Empty<string>());
+    }
 }

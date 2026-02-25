@@ -53,6 +53,7 @@ public class StorageFileMetadata
     public required long SizeBytes { get; set; }
     public required DateTime CreatedAt { get; set; }
     public required string ETag { get; set; }
+    public string? Md5Hash { get; set; }
 }
 
 public class StorageUploadResult
@@ -62,6 +63,7 @@ public class StorageUploadResult
     public required long SizeBytes { get; set; }
     public required DateTime UploadedAt { get; set; }
     public required string ETag { get; set; }
+    public string? Md5Hash { get; set; }
 }
 
 public class ResumableUploadSession

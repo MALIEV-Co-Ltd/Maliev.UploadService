@@ -145,21 +145,28 @@ public class UploadsController : ControllerBase
             // T077: GCS upload
             fileStream.Position = 0; // Reset stream after validation
 
-            // Calculate checksum (SHA256)
-            string checksum;
-            using (var sha256 = SHA256.Create())
-            {
-                var hashBytes = await sha256.ComputeHashAsync(fileStream, cancellationToken);
-                checksum = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
-            }
-            fileStream.Position = 0; // Reset stream after hashing
-
             var uploadResult = await _storageService.UploadFileAsync(
                 fileStream,
                 sanitizedPath,
                 request.File.ContentType,
                 request.Overwrite,
                 cancellationToken);
+
+            // Convert Base64 MD5 from GCS to Hex string format
+            string? checksum = null;
+            if (!string.IsNullOrEmpty(uploadResult.Md5Hash))
+            {
+                try
+                {
+                    checksum = BitConverter.ToString(Convert.FromBase64String(uploadResult.Md5Hash))
+                                           .Replace("-", "").ToLowerInvariant();
+                }
+                catch
+                {
+                    // Fallback if decode fails
+                }
+            }
+            checksum ??= "UNKNOWN";
 
             // T078: Upload entity persistence
             var upload = new Upload
@@ -336,6 +343,7 @@ public class UploadsController : ControllerBase
                 StoragePath = sanitizedPath,
                 ContentType = request.ContentType,
                 FileSize = request.TotalSize,
+                Checksum = request.Checksum, // Store client-provided checksum
                 BytesUploaded = 0,
                 Status = UploadStatus.InProgress,
                 UploadedAt = DateTime.UtcNow,
@@ -433,6 +441,24 @@ public class UploadsController : ControllerBase
                 // Get actual ETag from storage if possible
                 var gcsMetadata = await _storageService.GetFileMetadataAsync(upload.StoragePath, cancellationToken);
 
+                // Convert Base64 MD5 from GCS to Hex string format matching SHA256 standard
+                string? gcsMd5Hex = null;
+                if (!string.IsNullOrEmpty(gcsMetadata?.Md5Hash))
+                {
+                    try
+                    {
+                        gcsMd5Hex = BitConverter.ToString(Convert.FromBase64String(gcsMetadata.Md5Hash))
+                                                .Replace("-", "").ToLowerInvariant();
+                    }
+                    catch
+                    {
+                        // Fallback to original if decode fails
+                    }
+                }
+
+                // Determine final checksum: Client provided -> GCS MD5 -> UNKNOWN
+                var finalChecksum = upload.Checksum ?? gcsMd5Hex ?? "UNKNOWN";
+
                 // Create FileMetadata entity
                 var fileMetadata = new FileMetadata
                 {
@@ -443,7 +469,7 @@ public class UploadsController : ControllerBase
                     VersionETag = gcsMetadata?.ETag ?? Guid.NewGuid().ToString(),
                     FileSize = upload.FileSize,
                     ContentType = upload.ContentType,
-                    Checksum = "TODO", // Checksum calculation for resumable uploads requires assembling chunks or client-provided checksum
+                    Checksum = finalChecksum,
                     UploadedAt = DateTime.UtcNow
                 };
 
