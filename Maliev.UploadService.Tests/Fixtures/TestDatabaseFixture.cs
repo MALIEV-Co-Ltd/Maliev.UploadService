@@ -1,5 +1,5 @@
 using Maliev.Aspire.ServiceDefaults.IAM;
-using Maliev.UploadService.Data;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 
@@ -36,5 +36,3 @@ public class TestDatabaseFixture : IAsyncLifetime
         return context;
     }
 }
-
-

@@ -1,4 +1,4 @@
-using Maliev.UploadService.Data;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -16,6 +16,6 @@ public class ModelIntegrityTests
         using var context = new UploadDbContext(options);
         var hasChanges = context.Database.HasPendingModelChanges();
 
-        Assert.False(hasChanges, "Run 'dotnet ef migrations add <Name> --project Maliev.UploadService.Data --startup-project Maliev.UploadService.Api'");
+        Assert.False(hasChanges, "Run 'dotnet ef migrations add <Name> --project Maliev.UploadService.Infrastructure --startup-project Maliev.UploadService.Api'");
     }
 }

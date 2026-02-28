@@ -20,11 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Cloud.Storage.V1" Version="4.14.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\Maliev.UploadService.Data\Maliev.UploadService.Data.csproj" />
+    <ProjectReference Include="..\Maliev.UploadService.Infrastructure\Maliev.UploadService.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

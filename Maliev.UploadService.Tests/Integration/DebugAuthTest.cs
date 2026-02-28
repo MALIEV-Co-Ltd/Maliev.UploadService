@@ -50,7 +50,7 @@ public class DebugAuthTest
 
         // Get file metadata using the upload service's database context
         using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<Data.UploadDbContext>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<Maliev.UploadService.Infrastructure.Persistence.UploadDbContext>();
         var fileMetadata = await dbContext.FileMetadata.FindAsync(uploadId);
 
         _output.WriteLine($"FileMetadata UploadId: {fileMetadata?.UploadId}");
@@ -88,8 +88,3 @@ public class DebugAuthTest
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
-
-
-
-
-

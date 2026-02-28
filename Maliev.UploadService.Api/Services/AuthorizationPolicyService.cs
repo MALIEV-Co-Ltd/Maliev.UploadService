@@ -1,8 +1,8 @@
 using Maliev.Aspire.ServiceDefaults.IAM;
 using Maliev.UploadService.Api.Metrics;
 using Maliev.UploadService.Api.Services.Auth;
-using Maliev.UploadService.Data;
-using Maliev.UploadService.Data.Entities;
+using Maliev.UploadService.Domain.Entities;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using System.Text.Json;

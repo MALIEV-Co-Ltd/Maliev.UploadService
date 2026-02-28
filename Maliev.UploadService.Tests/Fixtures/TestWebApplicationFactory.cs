@@ -1,7 +1,7 @@
 using Maliev.Aspire.ServiceDefaults.IAM;
 using Maliev.UploadService.Api.Services;
-using Maliev.UploadService.Data;
-using Maliev.UploadService.Data.Entities;
+using Maliev.UploadService.Domain.Entities;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Maliev.UploadService.Tests.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics.CodeAnalysis;
