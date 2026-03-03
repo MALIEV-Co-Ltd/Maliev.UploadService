@@ -132,13 +132,13 @@ public class UploadsControllerEdgeCaseTests : IAsyncLifetime
         };
 
         var initiateResponse = await _client.PostAsJsonAsync("/upload/v1/uploads/resumable", initiateRequest);
-        
+
         // If initiate fails (conflict due to parallel test runs), test passes anyway
         if (initiateResponse.StatusCode != HttpStatusCode.OK)
         {
             return;
         }
-        
+
         var initiateResult = await initiateResponse.Content.ReadFromJsonAsync<InitiateResumableUploadResponse>();
         var uploadId = initiateResult!.UploadId;
 
@@ -151,7 +151,7 @@ public class UploadsControllerEdgeCaseTests : IAsyncLifetime
         var chunkData = new byte[1024];
         var chunkContent = new ByteArrayContent(chunkData);
         chunkContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        
+
         // Use valid range - start < end <= total
         chunkContent.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(0, 1023, 10 * 1024 * 1024);
 
