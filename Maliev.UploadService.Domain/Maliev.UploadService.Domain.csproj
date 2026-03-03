@@ -7,9 +7,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- Domain layer has ZERO external dependencies -->
-    <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
-  </ItemGroup>
+  <!-- Domain layer has ZERO external dependencies - no NuGet packages -->
 
 </Project>
