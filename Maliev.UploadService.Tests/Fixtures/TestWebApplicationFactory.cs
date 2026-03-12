@@ -16,13 +16,8 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
     {
         base.ConfigureAdditionalServices(services);
 
-        // Add permission-based authorization infrastructure for tests
-        services.AddHttpContextAccessor();
-        services.AddSingleton<Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider,
-                              Maliev.Aspire.ServiceDefaults.Authorization.PermissionAuthorizationPolicyProvider>();
-        services.AddScoped<Microsoft.AspNetCore.Authorization.IAuthorizationHandler,
-                           Maliev.Aspire.ServiceDefaults.Authorization.PermissionAuthorizationHandler>();
-        services.AddAuthorizationBuilder();
+        // Authorization infrastructure is registered by AddJwtAuthentication() via AddPermissionAuthorization()
+        // in Program.cs — no manual re-registration needed in tests.
 
         // Replace Google Cloud Storage client and IStorageService with mock implementations
         // Remove the real StorageClient and IStorageService registrations

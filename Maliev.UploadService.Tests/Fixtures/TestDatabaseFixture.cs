@@ -7,11 +7,14 @@ namespace Maliev.UploadService.Tests.Fixtures;
 
 public class TestDatabaseFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder().WithImage("postgres:18-alpine")
+    private readonly PostgreSqlContainer _container =
+#pragma warning disable CS0618
+        new PostgreSqlBuilder().WithImage("postgres:18-alpine")
         .WithDatabase("uploadservice_test")
         .WithUsername("postgres")
         .WithPassword("postgres")
         .Build();
+#pragma warning restore CS0618
 
     public string ConnectionString => _container.GetConnectionString();
 
@@ -36,5 +39,3 @@ public class TestDatabaseFixture : IAsyncLifetime
         return context;
     }
 }
-
-

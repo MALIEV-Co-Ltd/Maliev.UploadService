@@ -10,7 +10,9 @@ namespace Maliev.UploadService.Tests.Testing;
 /// </summary>
 public static class TestContainerFixture
 {
-    public static readonly PostgreSqlContainer PostgresContainer = new PostgreSqlBuilder().WithImage("postgres:18-alpine")
+    public static readonly PostgreSqlContainer PostgresContainer =
+#pragma warning disable CS0618
+        new PostgreSqlBuilder().WithImage("postgres:18-alpine")
         .WithCommand("-c", "max_connections=1000")
         .Build();
 
@@ -19,6 +21,7 @@ public static class TestContainerFixture
 
     public static readonly RabbitMqContainer RabbitMqContainer = new RabbitMqBuilder().WithImage("rabbitmq:4.2-alpine")
         .Build();
+#pragma warning restore CS0618
 
     private static bool _containersStarted;
     private static readonly SemaphoreSlim _startupLock = new(1, 1);

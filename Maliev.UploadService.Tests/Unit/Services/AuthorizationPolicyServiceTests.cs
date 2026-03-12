@@ -11,11 +11,35 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics.Metrics;
 using Moq;
 using Xunit;
+using Testcontainers.PostgreSql;
 
 namespace Maliev.UploadService.Tests.Unit.Services;
 
-public class AuthorizationPolicyServiceTests
+public class AuthorizationPolicyServiceTests : IAsyncLifetime
 {
+#pragma warning disable CS0618
+    private readonly PostgreSqlContainer _dbContainer = new PostgreSqlBuilder()
+        .WithImage("postgres:18-alpine")
+        .Build();
+#pragma warning restore CS0618
+
+    public async Task InitializeAsync()
+    {
+        await _dbContainer.StartAsync();
+
+        var options = new DbContextOptionsBuilder<UploadDbContext>()
+            .UseNpgsql(_dbContainer.GetConnectionString())
+            .Options;
+
+        using var context = new UploadDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _dbContainer.StopAsync();
+    }
+
     private AuthorizationPolicyService CreateService(UploadDbContext context)
     {
         var mockCache = new Mock<IDistributedCache>();
@@ -33,10 +57,29 @@ public class AuthorizationPolicyServiceTests
                 ["Service:Name"] = "UploadService"
             })
             .Build();
+#pragma warning restore CS0618
 
         var metrics = new UploadMetrics(mockMeterFactory.Object, configuration);
 
         return new AuthorizationPolicyService(context, mockCache.Object, mockLogger.Object, configuration, mockIamClient.Object, metrics);
+    }
+
+    private async Task<Upload> CreateTestUploadAsync(UploadDbContext context, string uploadId, string serviceId = "test-service")
+    {
+        var upload = new Upload
+        {
+            UploadId = uploadId,
+            ServiceId = serviceId,
+            FileName = $"test-{uploadId}.txt",
+            ContentType = "text/plain",
+            FileSize = 1024,
+            StoragePath = $"{serviceId}/test-{uploadId}.txt",
+            Status = UploadStatus.Completed,
+            UploadedAt = DateTime.UtcNow
+        };
+        context.Uploads.Add(upload);
+        await context.SaveChangesAsync();
+        return upload;
     }
 
     [Fact]
@@ -44,7 +87,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -77,7 +120,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -110,7 +153,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -143,7 +186,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -176,7 +219,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -209,7 +252,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -242,7 +285,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -275,7 +318,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -309,7 +352,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -327,7 +370,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -360,7 +403,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -394,7 +437,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -428,7 +471,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -446,7 +489,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -464,11 +507,14 @@ public class AuthorizationPolicyServiceTests
             UpdatedAt = DateTime.UtcNow
         });
 
+        var uploadId = Guid.NewGuid().ToString();
+        await CreateTestUploadAsync(context, uploadId);
+
         // Add existing files (100 MB total)
         context.FileMetadata.Add(new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = uploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/file1.txt",
             VersionETag = "etag1",
@@ -494,7 +540,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -512,11 +558,14 @@ public class AuthorizationPolicyServiceTests
             UpdatedAt = DateTime.UtcNow
         });
 
+        var uploadId = Guid.NewGuid().ToString();
+        await CreateTestUploadAsync(context, uploadId);
+
         // Add existing files (150 MB total)
         context.FileMetadata.Add(new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = uploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/file1.txt",
             VersionETag = "etag1",
@@ -542,7 +591,7 @@ public class AuthorizationPolicyServiceTests
     {
         // Arrange
         var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
 
         using var context = new UploadDbContext(options);
@@ -555,5 +604,3 @@ public class AuthorizationPolicyServiceTests
         Assert.False(result);
     }
 }
-
-

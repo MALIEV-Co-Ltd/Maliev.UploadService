@@ -6,35 +6,81 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
+using Testcontainers.PostgreSql;
 
 namespace Maliev.UploadService.Tests.Unit.Services;
 
 /// <summary>
 /// T129: Unit tests for GCS lifecycle rule creation
 /// </summary>
-public class LifecycleManagementServiceTests
+public class LifecycleManagementServiceTests : IAsyncLifetime
 {
+#pragma warning disable CS0618
+    private readonly PostgreSqlContainer _dbContainer = new PostgreSqlBuilder()
+        .WithImage("postgres:18-alpine")
+        .Build();
+#pragma warning restore CS0618
+
     private readonly Mock<ILogger<LifecycleManagementService>> _loggerMock;
     private readonly Mock<IStorageService> _storageServiceMock;
-    private readonly DbContextOptions<UploadDbContext> _dbOptions;
 
     public LifecycleManagementServiceTests()
     {
         _loggerMock = new Mock<ILogger<LifecycleManagementService>>();
         _storageServiceMock = new Mock<IStorageService>();
+    }
 
-        _dbOptions = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+    public async Task InitializeAsync()
+    {
+        await _dbContainer.StartAsync();
+
+        // Create the database schema
+        var options = new DbContextOptionsBuilder<UploadDbContext>()
+            .UseNpgsql(_dbContainer.GetConnectionString())
             .Options;
+
+        using var context = new UploadDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _dbContainer.StopAsync();
+    }
+
+    private UploadDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<UploadDbContext>()
+            .UseNpgsql(_dbContainer.GetConnectionString())
+            .Options;
+        return new UploadDbContext(options);
+    }
+
+    private async Task<Upload> CreateTestUploadAsync(UploadDbContext context, string serviceId = "test-service")
+    {
+        var id = Guid.NewGuid().ToString();
+        var upload = new Upload
+        {
+            UploadId = id,
+            ServiceId = serviceId,
+            FileName = $"test-{id}.txt",
+            ContentType = "text/plain",
+            FileSize = 1024,
+            StoragePath = $"{serviceId}/test-{id}.txt",
+            Status = UploadStatus.Completed,
+            UploadedAt = DateTime.UtcNow
+        };
+        context.Uploads.Add(upload);
+        await context.SaveChangesAsync();
+        return upload;
     }
 
     [Fact]
     public async Task ApplyRetentionPolicyAsync_WithValidPolicy_CalculatesExpirationDate()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
-
 
         var policy = new RetentionPolicy
         {
@@ -49,10 +95,12 @@ public class LifecycleManagementServiceTests
         context.RetentionPolicies.Add(policy);
         await context.SaveChangesAsync();
 
+        var upload = await CreateTestUploadAsync(context);
+
         var fileMetadata = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/file.txt",
             VersionETag = "etag",
@@ -75,7 +123,7 @@ public class LifecycleManagementServiceTests
     public async Task ApplyRetentionPolicyAsync_WithIndefiniteRetention_ReturnsNull()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var policy = new RetentionPolicy
@@ -91,10 +139,12 @@ public class LifecycleManagementServiceTests
         context.RetentionPolicies.Add(policy);
         await context.SaveChangesAsync();
 
+        var upload = await CreateTestUploadAsync(context);
+
         var fileMetadata = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/file.txt",
             VersionETag = "etag",
@@ -115,7 +165,7 @@ public class LifecycleManagementServiceTests
     public async Task GetActiveRetentionPolicyAsync_WithMatchingServiceAndPath_ReturnsPolicy()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var policy = new RetentionPolicy
@@ -145,7 +195,7 @@ public class LifecycleManagementServiceTests
     public async Task GetActiveRetentionPolicyAsync_WithNoMatchingPath_ReturnsNull()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var policy = new RetentionPolicy
@@ -174,7 +224,7 @@ public class LifecycleManagementServiceTests
     public void GetStorageClassForAge_WithTransitions_ReturnsCorrectClass()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var transitions = new List<StorageClassTransition>
@@ -195,7 +245,7 @@ public class LifecycleManagementServiceTests
     public async Task ApplyRetentionPolicyAsync_WithInactivePolicy_ReturnsNull()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var policy = new RetentionPolicy
@@ -211,10 +261,12 @@ public class LifecycleManagementServiceTests
         context.RetentionPolicies.Add(policy);
         await context.SaveChangesAsync();
 
+        var upload = await CreateTestUploadAsync(context);
+
         var fileMetadata = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/file.txt",
             VersionETag = "etag",
@@ -235,13 +287,15 @@ public class LifecycleManagementServiceTests
     public async Task ApplyRetentionPolicyAsync_WithNonExistentPolicy_ReturnsNull()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
+
+        var upload = await CreateTestUploadAsync(context);
 
         var fileMetadata = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/file.txt",
             VersionETag = "etag",
@@ -262,7 +316,7 @@ public class LifecycleManagementServiceTests
     public async Task GetActiveRetentionPolicyAsync_WithGlobalPolicy_ReturnsPolicy()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var globalPolicy = new RetentionPolicy
@@ -292,7 +346,7 @@ public class LifecycleManagementServiceTests
     public async Task GetActiveRetentionPolicyAsync_PrefersServiceSpecificPolicy()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var globalPolicy = new RetentionPolicy
@@ -334,7 +388,7 @@ public class LifecycleManagementServiceTests
     public async Task GetActiveRetentionPolicyAsync_PrefersMoreSpecificPath()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         var broadPolicy = new RetentionPolicy
@@ -376,7 +430,7 @@ public class LifecycleManagementServiceTests
     public void GetStorageClassForAge_WithNoTransitions_ReturnsStandard()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         // Act
@@ -390,7 +444,7 @@ public class LifecycleManagementServiceTests
     public void GetStorageClassForAge_WithNullTransitions_ReturnsStandard()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
 
         // Act
@@ -404,14 +458,18 @@ public class LifecycleManagementServiceTests
     public async Task ProcessExpiredFilesAsync_WithExpiredFiles_ReturnsCount()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
+
+        var upload1 = await CreateTestUploadAsync(context);
+        var upload2 = await CreateTestUploadAsync(context);
+        var upload3 = await CreateTestUploadAsync(context);
 
         // Add expired files
         var expiredFile1 = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload1.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/expired1.txt",
             VersionETag = "etag1",
@@ -425,7 +483,7 @@ public class LifecycleManagementServiceTests
         var expiredFile2 = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload2.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/expired2.txt",
             VersionETag = "etag2",
@@ -440,7 +498,7 @@ public class LifecycleManagementServiceTests
         var activeFile = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload3.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/active.txt",
             VersionETag = "etag3",
@@ -465,14 +523,16 @@ public class LifecycleManagementServiceTests
     public async Task ProcessExpiredFilesAsync_WithNoExpiredFiles_ReturnsZero()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
+
+        var upload = await CreateTestUploadAsync(context);
 
         // Add only non-expired files
         var activeFile = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/active.txt",
             VersionETag = "etag",
@@ -497,8 +557,10 @@ public class LifecycleManagementServiceTests
     public async Task UpdateStorageClassesAsync_WithFilesNeedingTransition_UpdatesAndReturnsCount()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
+
+        var upload = await CreateTestUploadAsync(context);
 
         // Create retention policy with storage class transitions
         var policy = new RetentionPolicy
@@ -523,7 +585,7 @@ public class LifecycleManagementServiceTests
         var fileNeedingTransition = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/old-file.txt",
             VersionETag = "etag",
@@ -553,8 +615,10 @@ public class LifecycleManagementServiceTests
     public async Task UpdateStorageClassesAsync_WithFilesAlreadyInCorrectClass_ReturnsZero()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
+
+        var upload = await CreateTestUploadAsync(context);
 
         // Create retention policy with storage class transitions
         var policy = new RetentionPolicy
@@ -578,7 +642,7 @@ public class LifecycleManagementServiceTests
         var fileInCorrectClass = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/file.txt",
             VersionETag = "etag",
@@ -604,8 +668,10 @@ public class LifecycleManagementServiceTests
     public async Task UpdateStorageClassesAsync_WithNoTransitions_ReturnsZero()
     {
         // Arrange
-        using var context = new UploadDbContext(_dbOptions);
+        using var context = CreateContext();
         var service = new LifecycleManagementService(context, _storageServiceMock.Object, _loggerMock.Object);
+
+        var upload = await CreateTestUploadAsync(context);
 
         // Create retention policy without storage class transitions
         var policy = new RetentionPolicy
@@ -626,7 +692,7 @@ public class LifecycleManagementServiceTests
         var file = new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
-            UploadId = Guid.NewGuid().ToString(),
+            UploadId = upload.UploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/file.txt",
             VersionETag = "etag",
@@ -648,5 +714,3 @@ public class LifecycleManagementServiceTests
         Assert.Equal(0, count); // No transitions defined
     }
 }
-
-
