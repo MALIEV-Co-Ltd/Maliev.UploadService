@@ -1,3 +1,5 @@
+﻿using System;
+using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -32,7 +34,8 @@ namespace Maliev.UploadService.Infrastructure.Persistence.Migrations
                     error_details = table.Column<string>(type: "jsonb", nullable: true),
                     total_files = table.Column<int>(type: "integer", nullable: false),
                     files_failed = table.Column<int>(type: "integer", nullable: false),
-                    errors = table.Column<List<string>>(type: "text[]", nullable: true)
+                    errors = table.Column<List<string>>(type: "text[]", nullable: true),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -51,7 +54,8 @@ namespace Maliev.UploadService.Infrastructure.Persistence.Migrations
                     apply_to_path_prefix = table.Column<string>(type: "text", nullable: true),
                     is_active = table.Column<bool>(type: "boolean", nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -73,7 +77,8 @@ namespace Maliev.UploadService.Infrastructure.Persistence.Migrations
                     allow_resumable_upload = table.Column<bool>(type: "boolean", nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    is_active = table.Column<bool>(type: "boolean", nullable: false)
+                    is_active = table.Column<bool>(type: "boolean", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -95,7 +100,8 @@ namespace Maliev.UploadService.Infrastructure.Persistence.Migrations
                     event_result = table.Column<string>(type: "text", nullable: false),
                     error_details = table.Column<string>(type: "text", nullable: true),
                     ip_address = table.Column<string>(type: "text", nullable: true),
-                    metadata = table.Column<string>(type: "jsonb", nullable: true)
+                    metadata = table.Column<string>(type: "jsonb", nullable: true),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -121,7 +127,8 @@ namespace Maliev.UploadService.Infrastructure.Persistence.Migrations
                     completed_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     error_message = table.Column<string>(type: "text", nullable: true),
                     retention_policy_id = table.Column<string>(type: "text", nullable: true),
-                    metadata = table.Column<string>(type: "jsonb", nullable: true)
+                    metadata = table.Column<string>(type: "jsonb", nullable: true),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -145,7 +152,8 @@ namespace Maliev.UploadService.Infrastructure.Persistence.Migrations
                     retention_policy_id = table.Column<string>(type: "text", nullable: true),
                     storage_class = table.Column<string>(type: "text", nullable: false),
                     expires_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    metadata = table.Column<string>(type: "jsonb", nullable: true)
+                    metadata = table.Column<string>(type: "jsonb", nullable: true),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -162,6 +170,11 @@ namespace Maliev.UploadService.Infrastructure.Persistence.Migrations
                         principalColumn: "upload_id",
                         onDelete: ReferentialAction.Restrict);
                 });
+
+            migrationBuilder.InsertData(
+                table: "service_authorization_policies",
+                columns: new[] { "policy_id", "allow_overwrite", "allow_resumable_upload", "allowed_content_types", "allowed_path_prefixes", "created_at", "is_active", "max_file_size_bytes", "service_id", "service_name", "storage_quota_bytes", "updated_at" },
+                values: new object[] { "policy-geometry-service", true, true, "[\"application/octet-stream\",\"model/stl\",\"text/plain\"]", "[\"geometry-test\",\"geometry/\"]", new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc), true, 104857600L, "geometry-service", "Geometry Analysis Service", 1073741824L, new DateTime(2025, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc) });
 
             migrationBuilder.CreateIndex(
                 name: "idx_bulk_delete_created_at",
