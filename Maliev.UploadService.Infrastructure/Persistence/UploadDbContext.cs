@@ -1,26 +1,46 @@
 using Maliev.Aspire.ServiceDefaults.Database;
-using Maliev.UploadService.Data.Entities;
+using Maliev.UploadService.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using System.Text.Json;
 
-namespace Maliev.UploadService.Data;
+namespace Maliev.UploadService.Infrastructure.Persistence;
 
+/// <summary>
+/// Entity Framework Core DbContext for the Upload Service.
+/// Configures JSONB columns, indexes, naming conventions, and seed data.
+/// </summary>
 public class UploadDbContext : DbContext
 {
+    /// <summary>
+    /// Initializes a new instance of <see cref="UploadDbContext"/>.
+    /// </summary>
+    /// <param name="options">DbContext configuration options.</param>
     public UploadDbContext(DbContextOptions<UploadDbContext> options)
         : base(options)
     {
     }
 
+    /// <summary>Gets or sets the uploads table.</summary>
     public DbSet<Upload> Uploads { get; set; } = null!;
+
+    /// <summary>Gets or sets the file metadata table.</summary>
     public DbSet<FileMetadata> FileMetadata { get; set; } = null!;
+
+    /// <summary>Gets or sets the service authorization policies table.</summary>
     public DbSet<ServiceAuthorizationPolicy> ServiceAuthorizationPolicies { get; set; } = null!;
+
+    /// <summary>Gets or sets the retention policies table.</summary>
     public DbSet<RetentionPolicy> RetentionPolicies { get; set; } = null!;
+
+    /// <summary>Gets or sets the upload audit events table.</summary>
     public DbSet<UploadEvent> UploadEvents { get; set; } = null!;
+
+    /// <summary>Gets or sets the bulk delete jobs table.</summary>
     public DbSet<BulkDeleteJob> BulkDeleteJobs { get; set; } = null!;
 
+    /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -74,6 +94,7 @@ public class UploadDbContext : DbContext
             entity.Property(e => e.Metadata)
                 .HasConversion(dictionaryConverter, dictionaryComparer)
                 .HasColumnType("jsonb");
+            entity.Property<uint>("xmin").HasColumnType("xid").IsRowVersion();
             entity.HasIndex(e => e.ServiceId).HasDatabaseName("idx_uploads_service_id");
             entity.HasIndex(e => e.Status).HasDatabaseName("idx_uploads_status");
             entity.HasIndex(e => e.UploadedAt).HasDatabaseName("idx_uploads_uploaded_at");
@@ -89,6 +110,7 @@ public class UploadDbContext : DbContext
             entity.Property(e => e.Metadata)
                 .HasConversion(dictionaryConverter, dictionaryComparer)
                 .HasColumnType("jsonb");
+            entity.Property<uint>("xmin").HasColumnType("xid").IsRowVersion();
             entity.HasIndex(e => e.ServiceId).HasDatabaseName("idx_filemetadata_service_id");
             entity.HasIndex(e => e.StoragePath).IsUnique().HasDatabaseName("idx_filemetadata_storage_path");
             entity.HasIndex(e => e.ExpiresAt).HasDatabaseName("idx_filemetadata_expires_at");
@@ -111,6 +133,7 @@ public class UploadDbContext : DbContext
             entity.Property(e => e.AllowedContentTypes)
                 .HasConversion(stringListConverter, stringListComparer)
                 .HasColumnType("jsonb");
+            entity.Property<uint>("xmin").HasColumnType("xid").IsRowVersion();
             entity.HasIndex(e => e.ServiceId).IsUnique().HasDatabaseName("idx_authz_policy_service_id");
             entity.HasIndex(e => e.IsActive).HasDatabaseName("idx_authz_policy_is_active");
         });
@@ -124,6 +147,7 @@ public class UploadDbContext : DbContext
             entity.Property(e => e.StorageClassTransitions)
                 .HasConversion(storageClassTransitionListConverter, storageClassTransitionListComparer)
                 .HasColumnType("jsonb");
+            entity.Property<uint>("xmin").HasColumnType("xid").IsRowVersion();
             entity.HasIndex(e => e.ServiceId).HasDatabaseName("idx_retention_policy_service_id");
             entity.HasIndex(e => e.IsActive).HasDatabaseName("idx_retention_policy_is_active");
         });
@@ -139,6 +163,7 @@ public class UploadDbContext : DbContext
             entity.Property(e => e.Metadata)
                 .HasConversion(dictionaryConverter, dictionaryComparer)
                 .HasColumnType("jsonb");
+            entity.Property<uint>("xmin").HasColumnType("xid").IsRowVersion();
             entity.HasIndex(e => e.ServiceId).HasDatabaseName("idx_upload_events_service_id");
             entity.HasIndex(e => e.EventType).HasDatabaseName("idx_upload_events_event_type");
             entity.HasIndex(e => e.EventTimestamp).HasDatabaseName("idx_upload_events_timestamp");
@@ -156,6 +181,7 @@ public class UploadDbContext : DbContext
             entity.Property(e => e.ErrorDetails)
                 .HasConversion(stringListConverterNullable, stringListComparerNullable)
                 .HasColumnType("jsonb");
+            entity.Property<uint>("xmin").HasColumnType("xid").IsRowVersion();
             entity.HasIndex(e => e.ServiceId).HasDatabaseName("idx_bulk_delete_service_id");
             entity.HasIndex(e => e.Status).HasDatabaseName("idx_bulk_delete_status");
             entity.HasIndex(e => e.CreatedAt).HasDatabaseName("idx_bulk_delete_created_at");

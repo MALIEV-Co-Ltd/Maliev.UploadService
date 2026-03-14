@@ -1,6 +1,6 @@
 using Maliev.UploadService.Api.BackgroundServices;
 using Maliev.UploadService.Api.Services;
-using Maliev.UploadService.Data;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Maliev.UploadService.Tests.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

@@ -1,9 +1,14 @@
-using Maliev.Aspire.ServiceDefaults.IAM;
-using Maliev.UploadService.Data;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
+using Xunit;
 
 namespace Maliev.UploadService.Tests.Fixtures;
+
+[CollectionDefinition("TestDatabase")]
+public class TestDatabaseCollection : ICollectionFixture<TestDatabaseFixture>
+{
+}
 
 public class TestDatabaseFixture : IAsyncLifetime
 {

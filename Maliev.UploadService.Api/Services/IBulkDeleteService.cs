@@ -1,4 +1,4 @@
-using Maliev.UploadService.Data.Entities;
+using Maliev.UploadService.Domain.Entities;
 
 namespace Maliev.UploadService.Api.Services;
 
@@ -23,4 +23,3 @@ public interface IBulkDeleteService
         string jobId,
         CancellationToken cancellationToken = default);
 }
-

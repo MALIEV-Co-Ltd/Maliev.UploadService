@@ -8,8 +8,8 @@ using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
-using Maliev.UploadService.Data;
-using Maliev.UploadService.Data.Entities;
+using Maliev.UploadService.Domain.Entities;
+using Maliev.UploadService.Infrastructure.Persistence;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -91,9 +91,11 @@ public class FilesController : ControllerBase
             return Forbid();
         }
 
-        // Update last accessed timestamp
-        fileMetadata.LastAccessedAt = DateTime.UtcNow;
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        // Update last accessed timestamp (use raw SQL to avoid concurrency conflicts on reads)
+        await _dbContext.Database.ExecuteSqlRawAsync(
+            "UPDATE file_metadata SET last_accessed_at = @p0 WHERE upload_id = @p1",
+            new object[] { DateTime.UtcNow, uploadId },
+            cancellationToken);
 
         // T100: Audit logging
         await LogFileEventAsync(uploadId, serviceId, fileMetadata.StoragePath,

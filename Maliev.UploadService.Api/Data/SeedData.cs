@@ -1,5 +1,5 @@
-using Maliev.UploadService.Data;
-using Maliev.UploadService.Data.Entities;
+using Maliev.UploadService.Domain.Entities;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace Maliev.UploadService.Api.Data;

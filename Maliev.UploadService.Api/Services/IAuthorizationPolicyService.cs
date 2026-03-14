@@ -1,4 +1,4 @@
-using Maliev.UploadService.Data.Entities;
+using Maliev.UploadService.Domain.Entities;
 
 namespace Maliev.UploadService.Api.Services;
 
@@ -39,4 +39,3 @@ public interface IAuthorizationPolicyService
     /// </summary>
     Task<bool> HasStorageQuotaAsync(string serviceId, long fileSize, CancellationToken cancellationToken = default);
 }
-

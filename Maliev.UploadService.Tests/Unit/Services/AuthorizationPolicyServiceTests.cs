@@ -1,43 +1,42 @@
 using Maliev.Aspire.ServiceDefaults.IAM;
-using Maliev.UploadService.Data;
-using Maliev.UploadService.Data.Entities;
+using Maliev.UploadService.Domain.Entities;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
 using Maliev.UploadService.Api.Metrics;
-using Microsoft.EntityFrameworkCore;
+using Maliev.UploadService.Tests.Fixtures;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics.Metrics;
 using Moq;
 using Xunit;
-using Testcontainers.PostgreSql;
 
 namespace Maliev.UploadService.Tests.Unit.Services;
 
+[Collection("TestDatabase")]
 public class AuthorizationPolicyServiceTests : IAsyncLifetime
 {
-#pragma warning disable CS0618
-    private readonly PostgreSqlContainer _dbContainer = new PostgreSqlBuilder()
-        .WithImage("postgres:18-alpine")
-        .Build();
-#pragma warning restore CS0618
+    private readonly TestDatabaseFixture _fixture;
+    private UploadDbContext? _context;
+
+    public AuthorizationPolicyServiceTests(TestDatabaseFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     public async Task InitializeAsync()
     {
-        await _dbContainer.StartAsync();
-
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        await context.Database.EnsureCreatedAsync();
+        _context = _fixture.CreateDbContext();
     }
 
     public async Task DisposeAsync()
     {
-        await _dbContainer.StopAsync();
+        if (_context != null)
+        {
+            await _context.Database.EnsureDeletedAsync();
+            await _context.DisposeAsync();
+        }
     }
 
     private AuthorizationPolicyService CreateService(UploadDbContext context)
@@ -46,10 +45,8 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
         var mockLogger = new Mock<ILogger<AuthorizationPolicyService>>();
         var mockIamClient = new Mock<IIamServiceClient>();
 
-        // Mock IMeterFactory for UploadMetrics
         var mockMeterFactory = new Mock<IMeterFactory>();
 
-        // Create a proper configuration using ConfigurationBuilder
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -57,7 +54,6 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
                 ["Service:Name"] = "UploadService"
             })
             .Build();
-#pragma warning restore CS0618
 
         var metrics = new UploadMetrics(mockMeterFactory.Object, configuration);
 
@@ -85,13 +81,7 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
     [Fact]
     public async Task CanUploadToPathAsync_ValidPathPrefix_ReturnsTrue()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -104,27 +94,19 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act
         var result = await service.CanUploadToPathAsync("test-service", "test-service/uploads/file.txt");
 
-        // Assert
         Assert.True(result);
     }
 
     [Fact]
     public async Task CanUploadToPathAsync_InvalidPathPrefix_ReturnsFalse()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -137,27 +119,19 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act
         var result = await service.CanUploadToPathAsync("test-service", "other-service/uploads/file.txt");
 
-        // Assert
         Assert.False(result);
     }
 
     [Fact]
     public async Task CanAccessPathAsync_ValidPathPrefix_ReturnsTrue()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -170,27 +144,19 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act
         var result = await service.CanAccessPathAsync("test-service", "test-service/uploads/file.txt");
 
-        // Assert
         Assert.True(result);
     }
 
     [Fact]
     public async Task CanAccessPathAsync_InvalidPathPrefix_ReturnsFalse()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -203,27 +169,19 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act
         var result = await service.CanAccessPathAsync("test-service", "other-service/uploads/file.txt");
 
-        // Assert
         Assert.False(result);
     }
 
     [Fact]
     public async Task IsContentTypeAllowedAsync_AllowedType_ReturnsTrue()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -236,27 +194,19 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act
         var result = await service.IsContentTypeAllowedAsync("test-service", "application/pdf");
 
-        // Assert
         Assert.True(result);
     }
 
     [Fact]
     public async Task IsContentTypeAllowedAsync_DisallowedType_ReturnsFalse()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -269,112 +219,19 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act
         var result = await service.IsContentTypeAllowedAsync("test-service", "application/exe");
 
-        // Assert
         Assert.False(result);
     }
 
     [Fact]
     public async Task IsFileSizeAllowedAsync_WithinLimit_ReturnsTrue()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
-        {
-            PolicyId = Guid.NewGuid().ToString(),
-            ServiceId = "test-service",
-            ServiceName = "Test Service",
-            AllowedPathPrefixes = new List<string> { "test-service/" },
-            AllowedContentTypes = new List<string> { "text/plain" },
-            MaxFileSizeBytes = 100 * 1024 * 1024, // 100 MB
-            StorageQuotaBytes = 1024L * 1024 * 1024,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        });
-        await context.SaveChangesAsync();
-
-        var service = CreateService(context);
-
-        // Act
-        var result = await service.IsFileSizeAllowedAsync("test-service", 50 * 1024 * 1024); // 50 MB
-
-        // Assert
-        Assert.True(result);
-    }
-
-    [Fact]
-    public async Task IsFileSizeAllowedAsync_ExceedsLimit_ReturnsFalse()
-    {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
-        {
-            PolicyId = Guid.NewGuid().ToString(),
-            ServiceId = "test-service",
-            ServiceName = "Test Service",
-            AllowedPathPrefixes = new List<string> { "test-service/" },
-            AllowedContentTypes = new List<string> { "text/plain" },
-            MaxFileSizeBytes = 100 * 1024 * 1024, // 100 MB
-            StorageQuotaBytes = 1024L * 1024 * 1024,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        });
-        await context.SaveChangesAsync();
-
-        var service = CreateService(context);
-
-        // Act
-        var result = await service.IsFileSizeAllowedAsync("test-service", 150 * 1024 * 1024); // 150 MB
-
-        // Assert
-        Assert.False(result);
-    }
-
-
-    [Fact]
-    public async Task GetPolicyAsync_NonExistentService_ReturnsNull()
-    {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        var service = CreateService(context);
-
-        // Act
-        var result = await service.GetPolicyAsync("non-existent-service");
-
-        // Assert
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task GetPolicyAsync_InactivePolicy_ReturnsNull()
-    {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -383,31 +240,83 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             AllowedContentTypes = new List<string> { "text/plain" },
             MaxFileSizeBytes = 100 * 1024 * 1024,
             StorageQuotaBytes = 1024L * 1024 * 1024,
-            IsActive = false, // Inactive
+            IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act
+        var result = await service.IsFileSizeAllowedAsync("test-service", 50 * 1024 * 1024);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public async Task IsFileSizeAllowedAsync_ExceedsLimit_ReturnsFalse()
+    {
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        {
+            PolicyId = Guid.NewGuid().ToString(),
+            ServiceId = "test-service",
+            ServiceName = "Test Service",
+            AllowedPathPrefixes = new List<string> { "test-service/" },
+            AllowedContentTypes = new List<string> { "text/plain" },
+            MaxFileSizeBytes = 100 * 1024 * 1024,
+            StorageQuotaBytes = 1024L * 1024 * 1024,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        var service = CreateService(_context);
+
+        var result = await service.IsFileSizeAllowedAsync("test-service", 150 * 1024 * 1024);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task GetPolicyAsync_NonExistentService_ReturnsNull()
+    {
+        var service = CreateService(_context!);
+
+        var result = await service.GetPolicyAsync("non-existent-service");
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetPolicyAsync_InactivePolicy_ReturnsNull()
+    {
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        {
+            PolicyId = Guid.NewGuid().ToString(),
+            ServiceId = "test-service",
+            ServiceName = "Test Service",
+            AllowedPathPrefixes = new List<string> { "test-service/" },
+            AllowedContentTypes = new List<string> { "text/plain" },
+            MaxFileSizeBytes = 100 * 1024 * 1024,
+            StorageQuotaBytes = 1024L * 1024 * 1024,
+            IsActive = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        var service = CreateService(_context);
+
         var result = await service.GetPolicyAsync("test-service");
 
-        // Assert
         Assert.Null(result);
     }
 
     [Fact]
     public async Task CanOverwriteAsync_PolicyAllowsOverwrite_ReturnsTrue()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -421,27 +330,19 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act
         var result = await service.CanOverwriteAsync("test-service");
 
-        // Assert
         Assert.True(result);
     }
 
     [Fact]
     public async Task CanOverwriteAsync_PolicyDisallowsOverwrite_ReturnsFalse()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
-
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -455,45 +356,42 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act
         var result = await service.CanOverwriteAsync("test-service");
 
-        // Assert
         Assert.False(result);
     }
 
     [Fact]
     public async Task CanOverwriteAsync_NoPolicy_ReturnsFalse()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
+        var service = CreateService(_context!);
 
-        using var context = new UploadDbContext(options);
-        var service = CreateService(context);
-
-        // Act
         var result = await service.CanOverwriteAsync("non-existent-service");
 
-        // Assert
         Assert.False(result);
     }
 
     [Fact]
     public async Task HasStorageQuotaAsync_WithinQuota_ReturnsTrue()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
+        var uploadId = Guid.NewGuid().ToString();
+        _context!.Uploads.Add(new Upload
+        {
+            UploadId = uploadId,
+            ServiceId = "test-service",
+            FileName = "file1.txt",
+            ContentType = "text/plain",
+            FileSize = 100 * 1024 * 1024,
+            StoragePath = "test-service/file1.txt",
+            Status = UploadStatus.Completed,
+            UploadedAt = DateTime.UtcNow
+        });
 
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -501,50 +399,51 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             AllowedPathPrefixes = new List<string> { "test-service/" },
             AllowedContentTypes = new List<string> { "text/plain" },
             MaxFileSizeBytes = 100 * 1024 * 1024,
-            StorageQuotaBytes = 1024L * 1024 * 1024, // 1 GB quota
+            StorageQuotaBytes = 1024L * 1024 * 1024,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
 
-        var uploadId = Guid.NewGuid().ToString();
-        await CreateTestUploadAsync(context, uploadId);
-
-        // Add existing files (100 MB total)
-        context.FileMetadata.Add(new FileMetadata
+        _context.FileMetadata.Add(new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
             UploadId = uploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/file1.txt",
             VersionETag = "etag1",
-            FileSize = 100 * 1024 * 1024, // 100 MB
+            FileSize = 100 * 1024 * 1024,
             ContentType = "text/plain",
             Checksum = "checksum1",
             UploadedAt = DateTime.UtcNow
         });
 
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act - Try to upload 50 MB (total would be 150 MB, well within 1 GB quota)
         var result = await service.HasStorageQuotaAsync("test-service", 50 * 1024 * 1024);
 
-        // Assert
         Assert.True(result);
     }
 
     [Fact]
     public async Task HasStorageQuotaAsync_ExceedsQuota_ReturnsFalse()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
+        var uploadId = Guid.NewGuid().ToString();
+        _context!.Uploads.Add(new Upload
+        {
+            UploadId = uploadId,
+            ServiceId = "test-service",
+            FileName = "file1.txt",
+            ContentType = "text/plain",
+            FileSize = 150 * 1024 * 1024,
+            StoragePath = "test-service/file1.txt",
+            Status = UploadStatus.Completed,
+            UploadedAt = DateTime.UtcNow
+        });
 
-        using var context = new UploadDbContext(options);
-        context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        _context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
         {
             PolicyId = Guid.NewGuid().ToString(),
             ServiceId = "test-service",
@@ -552,55 +451,41 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             AllowedPathPrefixes = new List<string> { "test-service/" },
             AllowedContentTypes = new List<string> { "text/plain" },
             MaxFileSizeBytes = 100 * 1024 * 1024,
-            StorageQuotaBytes = 200L * 1024 * 1024, // 200 MB quota
+            StorageQuotaBytes = 200L * 1024 * 1024,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
 
-        var uploadId = Guid.NewGuid().ToString();
-        await CreateTestUploadAsync(context, uploadId);
-
-        // Add existing files (150 MB total)
-        context.FileMetadata.Add(new FileMetadata
+        _context.FileMetadata.Add(new FileMetadata
         {
             FileId = Guid.NewGuid().ToString(),
             UploadId = uploadId,
             ServiceId = "test-service",
             StoragePath = "test-service/file1.txt",
             VersionETag = "etag1",
-            FileSize = 150 * 1024 * 1024, // 150 MB
+            FileSize = 150 * 1024 * 1024,
             ContentType = "text/plain",
             Checksum = "checksum1",
             UploadedAt = DateTime.UtcNow
         });
 
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        var service = CreateService(context);
+        var service = CreateService(_context);
 
-        // Act - Try to upload 100 MB (total would be 250 MB, exceeding 200 MB quota)
         var result = await service.HasStorageQuotaAsync("test-service", 100 * 1024 * 1024);
 
-        // Assert
         Assert.False(result);
     }
 
     [Fact]
     public async Task HasStorageQuotaAsync_NoPolicy_ReturnsFalse()
     {
-        // Arrange
-        var options = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql(_dbContainer.GetConnectionString())
-            .Options;
+        var service = CreateService(_context!);
 
-        using var context = new UploadDbContext(options);
-        var service = CreateService(context);
-
-        // Act
         var result = await service.HasStorageQuotaAsync("non-existent-service", 1024);
 
-        // Assert
         Assert.False(result);
     }
 }

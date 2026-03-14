@@ -4,7 +4,7 @@ using System.Diagnostics.Metrics;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
 using Maliev.UploadService.Api.Metrics;
-using Maliev.UploadService.Data;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -66,5 +66,3 @@ public class AuthPerformanceTests
         Assert.True(averageLatency < 10, $"Average latency {averageLatency}ms exceeded 10ms target");
     }
 }
-
-

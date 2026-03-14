@@ -4,7 +4,7 @@ using Maliev.UploadService.Api.BackgroundServices;
 using Maliev.UploadService.Api.Metrics;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
-using Maliev.UploadService.Data;
+using Maliev.UploadService.Infrastructure.Persistence;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;

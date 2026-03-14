@@ -10,7 +10,7 @@ using Maliev.UploadService.Tests.Fixtures;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Maliev.UploadService.Api.Services.Auth;
-using Maliev.UploadService.Data;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;

@@ -8,7 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Maliev.Aspire\Maliev.Aspire.ServiceDefaults\Maliev.Aspire.ServiceDefaults.csproj" />
+    <!-- Application layer references Domain only -->
+    <ProjectReference Include="..\Maliev.UploadService.Domain\Maliev.UploadService.Domain.csproj" />
   </ItemGroup>
 
 </Project>
