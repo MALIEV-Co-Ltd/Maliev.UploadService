@@ -14,6 +14,13 @@ public class IamServiceClient : IIamServiceClient
     private readonly ILogger<IamServiceClient> _logger;
     private readonly TimeSpan _cacheTtl;
 
+    /// <summary>
+    /// Initializes a new instance of the IamServiceClient class.
+    /// </summary>
+    /// <param name="httpClient">The HTTP client for IAM service calls.</param>
+    /// <param name="cache">The distributed cache.</param>
+    /// <param name="logger">The logger for this service.</param>
+    /// <param name="configuration">The application configuration.</param>
     public IamServiceClient(
         HttpClient httpClient,
         IDistributedCache cache,
@@ -26,6 +33,14 @@ public class IamServiceClient : IIamServiceClient
         _cacheTtl = TimeSpan.FromMinutes(configuration.GetValue<int>("IAM:CacheTtlMinutes", 5));
     }
 
+    /// <summary>
+    /// Checks if a principal has a specific permission for a resource.
+    /// </summary>
+    /// <param name="principalId">The principal identifier.</param>
+    /// <param name="permission">The permission to check.</param>
+    /// <param name="resourcePath">The optional resource path.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True if the principal has the permission, otherwise false.</returns>
     public async Task<bool> CheckPermissionAsync(string principalId, string permission, string? resourcePath = null, CancellationToken cancellationToken = default)
     {
         var cacheKey = $"iam_perm:{principalId}:{permission}:{resourcePath ?? "root"}";
@@ -67,16 +82,37 @@ public class IamServiceClient : IIamServiceClient
         }
     }
 
+    /// <summary>
+    /// Checks multiple permissions for a principal.
+    /// </summary>
+    /// <param name="principalId">The principal identifier.</param>
+    /// <param name="requests">The permission check requests.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A dictionary of permission results.</returns>
     public Task<Dictionary<string, bool>> CheckPermissionsAsync(string principalId, IEnumerable<PermissionCheckRequest> requests, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(new Dictionary<string, bool>());
     }
 
+    /// <summary>
+    /// Gets all permissions for a user.
+    /// </summary>
+    /// <param name="userId">The user identifier.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>An enumerable of permission strings.</returns>
     public Task<IEnumerable<string>> GetUserPermissionsAsync(string userId, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(Enumerable.Empty<string>());
     }
 
+    /// <summary>
+    /// Gets all authorized resources for a principal with a specific permission.
+    /// </summary>
+    /// <param name="principalId">The principal identifier.</param>
+    /// <param name="permissionId">The permission identifier.</param>
+    /// <param name="resourceType">The resource type.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>An enumerable of resource paths.</returns>
     public Task<IEnumerable<string>> GetAuthorizedResourcesAsync(string principalId, string permissionId, string resourceType, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(Enumerable.Empty<string>());

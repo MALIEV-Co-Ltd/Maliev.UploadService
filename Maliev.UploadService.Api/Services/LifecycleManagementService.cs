@@ -13,6 +13,12 @@ public class LifecycleManagementService : ILifecycleManagementService
     private readonly IStorageService _storageService;
     private readonly ILogger<LifecycleManagementService> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the LifecycleManagementService class.
+    /// </summary>
+    /// <param name="context">The database context.</param>
+    /// <param name="storageService">The storage service.</param>
+    /// <param name="logger">The logger for this service.</param>
     public LifecycleManagementService(
         UploadDbContext context,
         IStorageService storageService,

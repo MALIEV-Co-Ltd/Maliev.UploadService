@@ -12,6 +12,11 @@ public class LifecyclePolicyWorker : BackgroundService
     private readonly ILogger<LifecyclePolicyWorker> _logger;
     private readonly TimeSpan _processInterval = TimeSpan.FromHours(1); // Run every hour
 
+    /// <summary>
+    /// Initializes a new instance of the LifecyclePolicyWorker class.
+    /// </summary>
+    /// <param name="serviceProvider">The service provider for dependency injection.</param>
+    /// <param name="logger">The logger for this worker.</param>
     public LifecyclePolicyWorker(
         IServiceProvider serviceProvider,
         ILogger<LifecyclePolicyWorker> logger)
@@ -20,6 +25,11 @@ public class LifecyclePolicyWorker : BackgroundService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Executes the background worker to periodically process lifecycle policies.
+    /// </summary>
+    /// <param name="stoppingToken">Cancellation token for graceful shutdown.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Lifecycle Policy Worker starting");

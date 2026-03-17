@@ -9,6 +9,9 @@ using System.Text.Json;
 
 namespace Maliev.UploadService.Api.Services;
 
+/// <summary>
+/// Service for managing authorization policies and access control.
+/// </summary>
 public class AuthorizationPolicyService : IAuthorizationPolicyService
 {
     private readonly UploadDbContext _context;
@@ -18,6 +21,15 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
     private readonly UploadMetrics _metrics;
     private readonly TimeSpan _cacheDuration;
 
+    /// <summary>
+    /// Initializes a new instance of the AuthorizationPolicyService class.
+    /// </summary>
+    /// <param name="context">The database context.</param>
+    /// <param name="cache">The distributed cache.</param>
+    /// <param name="logger">The logger for this service.</param>
+    /// <param name="configuration">The application configuration.</param>
+    /// <param name="iamClient">The IAM service client.</param>
+    /// <param name="metrics">The upload metrics.</param>
     public AuthorizationPolicyService(
         UploadDbContext context,
         IDistributedCache cache,
@@ -35,6 +47,12 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
             configuration.GetValue<int>("Authorization:PolicyCacheDurationMinutes", 5));
     }
 
+    /// <summary>
+    /// Retrieves the authorization policy for a given service ID.
+    /// </summary>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The authorization policy if found, otherwise null.</returns>
     public async Task<ServiceAuthorizationPolicy?> GetPolicyAsync(string serviceId, CancellationToken cancellationToken = default)
     {
         var cacheKey = $"authz_policy:{serviceId}";
@@ -68,6 +86,13 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
         return policy;
     }
 
+    /// <summary>
+    /// Checks if a service can upload to a specific path.
+    /// </summary>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="path">The storage path.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True if the service can upload to the path, otherwise false.</returns>
     public async Task<bool> CanUploadToPathAsync(string serviceId, string path, CancellationToken cancellationToken = default)
     {
         // 1. IAM Check (Overrides Legacy)
@@ -108,6 +133,13 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
         return authorized;
     }
 
+    /// <summary>
+    /// Checks if a service can access (read/delete) a file at a specific path.
+    /// </summary>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="path">The storage path.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True if the service can access the path, otherwise false.</returns>
     public async Task<bool> CanAccessPathAsync(string serviceId, string path, CancellationToken cancellationToken = default)
     {
         // 1. IAM Check (Overrides Legacy)
@@ -128,6 +160,13 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
         return await CanUploadToPathAsync(serviceId, path, cancellationToken);
     }
 
+    /// <summary>
+    /// Validates if a content type is allowed for a service.
+    /// </summary>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="contentType">The content type.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True if the content type is allowed, otherwise false.</returns>
     public async Task<bool> IsContentTypeAllowedAsync(string serviceId, string contentType, CancellationToken cancellationToken = default)
     {
         var policy = await GetPolicyAsync(serviceId, cancellationToken);
@@ -140,6 +179,13 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
         return policy.AllowedContentTypes.Contains(contentType, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Validates if a file size is within the service's limit.
+    /// </summary>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="fileSize">The file size in bytes.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True if the file size is allowed, otherwise false.</returns>
     public async Task<bool> IsFileSizeAllowedAsync(string serviceId, long fileSize, CancellationToken cancellationToken = default)
     {
         var policy = await GetPolicyAsync(serviceId, cancellationToken);
@@ -152,12 +198,25 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
         return fileSize <= policy.MaxFileSizeBytes;
     }
 
+    /// <summary>
+    /// Checks if a service can overwrite existing files.
+    /// </summary>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True if overwrite is allowed, otherwise false.</returns>
     public async Task<bool> CanOverwriteAsync(string serviceId, CancellationToken cancellationToken = default)
     {
         var policy = await GetPolicyAsync(serviceId, cancellationToken);
         return policy?.AllowOverwrite ?? false;
     }
 
+    /// <summary>
+    /// Checks if a service has remaining storage quota for a given file size.
+    /// </summary>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="fileSize">The file size in bytes.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True if the service has sufficient quota, otherwise false.</returns>
     public async Task<bool> HasStorageQuotaAsync(string serviceId, long fileSize, CancellationToken cancellationToken = default)
     {
         var policy = await GetPolicyAsync(serviceId, cancellationToken);

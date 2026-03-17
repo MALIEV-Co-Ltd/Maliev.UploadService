@@ -1,5 +1,8 @@
 namespace Maliev.UploadService.Api.Services;
 
+/// <summary>
+/// Service for validating uploaded files.
+/// </summary>
 public class FileValidationService : IValidationService
 {
     private readonly long _maxFileSizeBytes = 100 * 1024 * 1024; // 100MB default
@@ -17,6 +20,15 @@ public class FileValidationService : IValidationService
         "application/octet-stream"
     };
 
+    /// <summary>
+    /// Validates a file before upload.
+    /// </summary>
+    /// <param name="fileStream">The file stream.</param>
+    /// <param name="fileName">The file name.</param>
+    /// <param name="contentType">The content type.</param>
+    /// <param name="sizeBytes">The file size in bytes.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The validation result.</returns>
     public async Task<ValidationResult> ValidateFileAsync(
         Stream fileStream,
         string fileName,

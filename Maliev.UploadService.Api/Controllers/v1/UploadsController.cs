@@ -18,8 +18,11 @@ using System.Security.Cryptography;
 
 namespace Maliev.UploadService.Api.Controllers.v1;
 
+/// <summary>
+/// Controller for handling file uploads and related operations.
+/// </summary>
 [ApiController]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("upload/v{version:apiVersion}/uploads")]
 [Authorize]
 public class UploadsController : ControllerBase
@@ -31,6 +34,15 @@ public class UploadsController : ControllerBase
     private readonly ILogger<UploadsController> _logger;
     private readonly IPublishEndpoint _publishEndpoint;
 
+    /// <summary>
+    /// Initializes a new instance of the UploadsController class.
+    /// </summary>
+    /// <param name="validationService">The validation service.</param>
+    /// <param name="storageService">The storage service.</param>
+    /// <param name="lifecycleService">The lifecycle management service.</param>
+    /// <param name="dbContext">The database context.</param>
+    /// <param name="logger">The logger for this controller.</param>
+    /// <param name="publishEndpoint">The MassTransit publish endpoint.</param>
     public UploadsController(
         IValidationService validationService,
         IStorageService storageService,
@@ -47,6 +59,9 @@ public class UploadsController : ControllerBase
         _publishEndpoint = publishEndpoint;
     }
 
+    /// <summary>
+    /// Uploads a file to the storage service and returns the file identifier.
+    /// </summary>
     [HttpPost]
     [Consumes("multipart/form-data")]
     [RequirePermission(UploadPermissions.FilesUpload, ResourcePathTemplate = "folders/{request.Path}")]

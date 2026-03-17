@@ -13,6 +13,12 @@ public class BulkDeleteService : IBulkDeleteService
     private readonly IStorageService _storageService;
     private readonly ILogger<BulkDeleteService> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the BulkDeleteService class.
+    /// </summary>
+    /// <param name="dbContext">The database context.</param>
+    /// <param name="storageService">The storage service.</param>
+    /// <param name="logger">The logger for this service.</param>
     public BulkDeleteService(
         UploadDbContext dbContext,
         IStorageService storageService,
@@ -23,6 +29,16 @@ public class BulkDeleteService : IBulkDeleteService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Initiates a new bulk delete job.
+    /// </summary>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="pathPrefix">Optional path prefix to filter files.</param>
+    /// <param name="uploadIds">Optional list of specific upload IDs to delete.</param>
+    /// <param name="deleteFilesOlderThan">Optional date threshold for deletion.</param>
+    /// <param name="reason">The reason for the bulk delete.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The job ID.</returns>
     public async Task<string> InitiateBulkDeleteAsync(
         string serviceId,
         string? pathPrefix,
@@ -57,6 +73,12 @@ public class BulkDeleteService : IBulkDeleteService
         return jobId;
     }
 
+    /// <summary>
+    /// Gets the status of a bulk delete job.
+    /// </summary>
+    /// <param name="jobId">The job identifier.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The bulk delete job if found, otherwise null.</returns>
     public async Task<BulkDeleteJob?> GetBulkDeleteJobStatusAsync(
         string jobId,
         CancellationToken cancellationToken = default)
@@ -65,6 +87,12 @@ public class BulkDeleteService : IBulkDeleteService
             .FirstOrDefaultAsync(j => j.JobId == jobId, cancellationToken);
     }
 
+    /// <summary>
+    /// Processes a bulk delete job by deleting files matching the criteria.
+    /// </summary>
+    /// <param name="jobId">The job identifier.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
     public async Task ProcessBulkDeleteJobAsync(
         string jobId,
         CancellationToken cancellationToken = default)

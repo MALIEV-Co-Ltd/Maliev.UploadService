@@ -11,6 +11,11 @@ public class BulkDeleteJobConsumer : IConsumer<BulkDeleteJobMessage>
     private readonly IBulkDeleteService _bulkDeleteService;
     private readonly ILogger<BulkDeleteJobConsumer> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the BulkDeleteJobConsumer class.
+    /// </summary>
+    /// <param name="bulkDeleteService">The bulk delete service.</param>
+    /// <param name="logger">The logger for this consumer.</param>
     public BulkDeleteJobConsumer(
         IBulkDeleteService bulkDeleteService,
         ILogger<BulkDeleteJobConsumer> logger)
@@ -19,6 +24,11 @@ public class BulkDeleteJobConsumer : IConsumer<BulkDeleteJobMessage>
         _logger = logger;
     }
 
+    /// <summary>
+    /// Consumes and processes a bulk delete job message.
+    /// </summary>
+    /// <param name="context">The consume context containing the message.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
     public async Task Consume(ConsumeContext<BulkDeleteJobMessage> context)
     {
         var jobId = context.Message.JobId;
@@ -38,7 +48,13 @@ public class BulkDeleteJobConsumer : IConsumer<BulkDeleteJobMessage>
     }
 }
 
+/// <summary>
+/// Message class for bulk delete job processing.
+/// </summary>
 public class BulkDeleteJobMessage
 {
+    /// <summary>
+    /// Gets or sets the unique identifier for the bulk delete job.
+    /// </summary>
     public required string JobId { get; set; }
 }

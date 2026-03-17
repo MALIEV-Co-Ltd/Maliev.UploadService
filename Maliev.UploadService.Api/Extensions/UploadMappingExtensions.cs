@@ -3,8 +3,17 @@ using Maliev.UploadService.Domain.Entities;
 
 namespace Maliev.UploadService.Api.Extensions;
 
+/// <summary>
+/// Extension methods for mapping Upload entities to responses.
+/// </summary>
 public static class UploadMappingExtensions
 {
+    /// <summary>
+    /// Converts an Upload entity to an UploadResponse.
+    /// </summary>
+    /// <param name="upload">The upload entity.</param>
+    /// <param name="signedUrl">Optional signed URL for download.</param>
+    /// <returns>The upload response.</returns>
     public static UploadResponse ToResponse(this Upload upload, string? signedUrl = null)
     {
         return new UploadResponse

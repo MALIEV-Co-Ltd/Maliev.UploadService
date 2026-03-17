@@ -2,6 +2,9 @@ using Maliev.UploadService.Domain.Entities;
 
 namespace Maliev.UploadService.Api.Services;
 
+/// <summary>
+/// Interface for authorization policy service.
+/// </summary>
 public interface IAuthorizationPolicyService
 {
     /// <summary>

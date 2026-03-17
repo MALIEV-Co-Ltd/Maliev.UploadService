@@ -3,6 +3,9 @@ using Microsoft.Extensions.Configuration;
 
 namespace Maliev.UploadService.Api.Services;
 
+/// <summary>
+/// Google Cloud Storage implementation of the IStorageService.
+/// </summary>
 public class GcsStorageService : IStorageService
 {
     private readonly StorageClient _storageClient;
@@ -11,6 +14,13 @@ public class GcsStorageService : IStorageService
     private readonly string _defaultBucket;
     private readonly IHttpClientFactory _httpClientFactory;
 
+    /// <summary>
+    /// Initializes a new instance of the GcsStorageService class.
+    /// </summary>
+    /// <param name="storageClient">The GCS storage client.</param>
+    /// <param name="config">The application configuration.</param>
+    /// <param name="httpClientFactory">The HTTP client factory.</param>
+    /// <param name="credential">The Google credentials.</param>
     public GcsStorageService(StorageClient storageClient, IConfiguration config, IHttpClientFactory httpClientFactory, Google.Apis.Auth.OAuth2.GoogleCredential credential)
     {
         _storageClient = storageClient;
@@ -56,6 +66,15 @@ public class GcsStorageService : IStorageService
         return _defaultBucket;
     }
 
+    /// <summary>
+    /// Uploads a file to Google Cloud Storage.
+    /// </summary>
+    /// <param name="fileStream">The file stream.</param>
+    /// <param name="storagePath">The storage path.</param>
+    /// <param name="contentType">The content type.</param>
+    /// <param name="overwrite">Whether to overwrite an existing file.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The upload result.</returns>
     public async Task<StorageUploadResult> UploadFileAsync(
         Stream fileStream,
         string storagePath,
@@ -95,6 +114,12 @@ public class GcsStorageService : IStorageService
         };
     }
 
+    /// <summary>
+    /// Checks if a file exists at the specified path.
+    /// </summary>
+    /// <param name="storagePath">The storage path.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>True if the file exists, otherwise false.</returns>
     public async Task<bool> FileExistsAsync(string storagePath, CancellationToken cancellationToken = default)
     {
         var bucketName = GetBucketForPath(storagePath);
@@ -113,12 +138,25 @@ public class GcsStorageService : IStorageService
         }
     }
 
+    /// <summary>
+    /// Deletes a file from Google Cloud Storage.
+    /// </summary>
+    /// <param name="storagePath">The storage path.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
     public async Task DeleteFileAsync(string storagePath, CancellationToken cancellationToken = default)
     {
         var bucketName = GetBucketForPath(storagePath);
         await _storageClient.DeleteObjectAsync(bucketName, storagePath, cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// Generates a signed URL for file download.
+    /// </summary>
+    /// <param name="storagePath">The storage path.</param>
+    /// <param name="expiration">The expiration time span.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The signed URL.</returns>
     public async Task<string> GenerateSignedUrlAsync(
         string storagePath,
         TimeSpan expiration,
@@ -149,6 +187,12 @@ public class GcsStorageService : IStorageService
         }
     }
 
+    /// <summary>
+    /// Gets file metadata from Google Cloud Storage.
+    /// </summary>
+    /// <param name="storagePath">The storage path.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The file metadata if found, otherwise null.</returns>
     public async Task<StorageFileMetadata?> GetFileMetadataAsync(string storagePath, CancellationToken cancellationToken = default)
     {
         var bucketName = GetBucketForPath(storagePath);

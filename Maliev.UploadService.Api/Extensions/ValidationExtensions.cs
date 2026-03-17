@@ -2,6 +2,9 @@ using System.Text.RegularExpressions;
 
 namespace Maliev.UploadService.Api.Extensions;
 
+/// <summary>
+/// Extension methods for path validation and sanitization.
+/// </summary>
 public static partial class ValidationExtensions
 {
     private static readonly char[] InvalidPathChars = Path.GetInvalidPathChars()

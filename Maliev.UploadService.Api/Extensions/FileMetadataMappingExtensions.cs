@@ -3,8 +3,16 @@ using Maliev.UploadService.Domain.Entities;
 
 namespace Maliev.UploadService.Api.Extensions;
 
+/// <summary>
+/// Extension methods for mapping FileMetadata entities to responses.
+/// </summary>
 public static class FileMetadataMappingExtensions
 {
+    /// <summary>
+    /// Converts a FileMetadata entity to a FileMetadataResponse.
+    /// </summary>
+    /// <param name="fileMetadata">The file metadata entity.</param>
+    /// <returns>The file metadata response.</returns>
     public static FileMetadataResponse ToResponse(this FileMetadata fileMetadata)
     {
         return new FileMetadataResponse

@@ -8,6 +8,11 @@ namespace Maliev.UploadService.Api.Services.Auth;
 /// </summary>
 public class UploadIAMRegistrationService : IAMRegistrationService
 {
+    /// <summary>
+    /// Initializes a new instance of the UploadIAMRegistrationService class.
+    /// </summary>
+    /// <param name="configuration">The application configuration.</param>
+    /// <param name="logger">The logger for this service.</param>
     public UploadIAMRegistrationService(
         IConfiguration configuration,
         ILogger<UploadIAMRegistrationService> logger)

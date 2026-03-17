@@ -14,6 +14,12 @@ public class UploadIAMMigrationService
     private readonly IIamServiceClient _iamClient;
     private readonly ILogger<UploadIAMMigrationService> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the UploadIAMMigrationService class.
+    /// </summary>
+    /// <param name="dbContext">The database context.</param>
+    /// <param name="iamClient">The IAM service client.</param>
+    /// <param name="logger">The logger for this service.</param>
     public UploadIAMMigrationService(
         UploadDbContext dbContext,
         IIamServiceClient iamClient,

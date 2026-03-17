@@ -15,7 +15,7 @@ namespace Maliev.UploadService.Api.Controllers.v1;
 /// Admin controller for bulk operations (FR-032, FR-033)
 /// </summary>
 [ApiController]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("upload/v{version:apiVersion}/admin")]
 [Authorize]
 public class AdminController : ControllerBase
@@ -24,6 +24,12 @@ public class AdminController : ControllerBase
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly ILogger<AdminController> _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the AdminController class.
+    /// </summary>
+    /// <param name="bulkDeleteService">The bulk delete service.</param>
+    /// <param name="publishEndpoint">The MassTransit publish endpoint.</param>
+    /// <param name="logger">The logger for this controller.</param>
     public AdminController(
         IBulkDeleteService bulkDeleteService,
         IPublishEndpoint publishEndpoint,

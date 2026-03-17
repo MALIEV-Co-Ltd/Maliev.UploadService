@@ -18,8 +18,11 @@ using Microsoft.Extensions.Caching.Distributed;
 
 namespace Maliev.UploadService.Api.Controllers.v1;
 
+/// <summary>
+/// Controller for file management operations (FR-029, FR-030, FR-031)
+/// </summary>
 [ApiController]
-[ApiVersion("1.0")]
+[ApiVersion("1")]
 [Route("upload/v{version:apiVersion}/files")]
 [Authorize]
 public class FilesController : ControllerBase
@@ -32,6 +35,15 @@ public class FilesController : ControllerBase
     private readonly IPublishEndpoint _publishEndpoint;
     private const int SignedUrlCacheExpirationMinutes = 5;
 
+    /// <summary>
+    /// Initializes a new instance of the FilesController class.
+    /// </summary>
+    /// <param name="storageService">The storage service.</param>
+    /// <param name="authorizationService">The authorization policy service.</param>
+    /// <param name="dbContext">The database context.</param>
+    /// <param name="cache">The distributed cache.</param>
+    /// <param name="logger">The logger for this controller.</param>
+    /// <param name="publishEndpoint">The MassTransit publish endpoint.</param>
     public FilesController(
         IStorageService storageService,
         IAuthorizationPolicyService authorizationService,

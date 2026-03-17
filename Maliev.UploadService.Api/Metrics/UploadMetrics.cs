@@ -26,6 +26,11 @@ public class UploadMetrics
     private long _activeUploadCount;
     private readonly object _activeUploadLock = new();
 
+    /// <summary>
+    /// Initializes a new instance of the UploadMetrics class.
+    /// </summary>
+    /// <param name="meterFactory">The OpenTelemetry meter factory.</param>
+    /// <param name="configuration">The application configuration.</param>
     public UploadMetrics(IMeterFactory meterFactory, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(meterFactory);
