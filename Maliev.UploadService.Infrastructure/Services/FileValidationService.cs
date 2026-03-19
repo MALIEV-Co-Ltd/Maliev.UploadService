@@ -20,7 +20,14 @@ public class FileValidationService : IValidationService
         "image/gif",
         "image/webp",
         "application/zip",
-        "application/octet-stream"
+        "application/octet-stream",
+        // 3D model types
+        "model/stl",
+        "model/obj",
+        "model/3mf",
+        "application/step",
+        "application/iges",
+        "image/vnd.dwg"
     };
 
     /// <inheritdoc/>

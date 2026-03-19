@@ -608,4 +608,87 @@ public class UploadsController : ControllerBase
         _dbContext.UploadEvents.Add(uploadEvent);
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Uploads a processed artifact (GLB, thumbnail, preview) to GCS.
+    /// This endpoint is designed for internal service-to-service communication.
+    /// </summary>
+    [HttpPost("artifacts")]
+    [Consumes("application/json")]
+    [RequirePermission(UploadPermissions.FilesUpload, ResourcePathTemplate = "folders/{request.StoragePath}")]
+    [ProducesResponseType(typeof(ArtifactUploadResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> UploadArtifact(
+        [FromBody] UploadArtifactRequest request,
+        CancellationToken cancellationToken)
+    {
+        var serviceName = User.Identity?.Name ?? "GeometryService";
+
+        try
+        {
+            // Decode Base64 artifact data
+            byte[] artifactBytes;
+            try
+            {
+                artifactBytes = Convert.FromBase64String(request.ArtifactData);
+            }
+            catch (FormatException)
+            {
+                return BadRequest(new { error = "Invalid Base64-encoded artifact data" });
+            }
+
+            // Sanitize path
+            string sanitizedPath;
+            try
+            {
+                sanitizedPath = request.StoragePath.SanitizePath();
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Path traversal attempt detected by service {ServiceName}: {OriginalPath}",
+                    serviceName, request.StoragePath);
+                return BadRequest(new { error = $"Invalid path: {ex.Message}" });
+            }
+
+            // Upload to GCS using the storage service
+            using var stream = new MemoryStream(artifactBytes);
+            await _storageService.UploadFileAsync(
+                stream,
+                sanitizedPath,
+                request.ContentType,
+                overwrite: true,
+                cancellationToken);
+
+            // Generate signed download URL
+            var downloadUrl = await _storageService.GenerateSignedUrlAsync(
+                sanitizedPath,
+                TimeSpan.FromHours(1),
+                cancellationToken);
+
+            // Log the event
+            await LogUploadEventAsync(
+                request.ArtifactId,
+                serviceName,
+                sanitizedPath,
+                "ArtifactUploaded",
+                cancellationToken);
+
+            _logger.LogInformation("Artifact uploaded successfully. ArtifactId: {ArtifactId}, Path: {Path}",
+                request.ArtifactId, sanitizedPath);
+
+            return Ok(new ArtifactUploadResponse
+            {
+                ArtifactId = request.ArtifactId,
+                StoragePath = sanitizedPath,
+                DownloadUrl = downloadUrl
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to upload artifact. ArtifactId: {ArtifactId}", request.ArtifactId);
+            return StatusCode(500, new { error = "Failed to upload artifact" });
+        }
+    }
 }
