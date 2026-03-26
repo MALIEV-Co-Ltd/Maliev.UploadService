@@ -9,7 +9,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Maliev.UploadService.Infrastructure.Persistence.Migrations
+namespace Maliev.UploadService.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(UploadDbContext))]
     partial class UploadDbContextModelSnapshot : ModelSnapshot
@@ -18,7 +18,7 @@ namespace Maliev.UploadService.Infrastructure.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.3")
+                .HasAnnotation("ProductVersion", "10.0.5")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
