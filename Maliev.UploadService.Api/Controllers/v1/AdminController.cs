@@ -247,6 +247,98 @@ public class AdminController : ControllerBase
             Errors = errors
         });
     }
+
+    /// <summary>
+    /// POST /api/v1/admin/migrate-project/{projectId}?customerId={guid} -
+    /// Migrates all files for a single project from the temp bucket to the customer bucket.
+    /// Files are copied from <c>projects/{projectId}/...</c> to
+    /// <c>customers/{customerId}/projects/{projectId}/...</c>.
+    /// </summary>
+    /// <param name="projectId">The project GUID whose files should be migrated.</param>
+    /// <param name="customerId">The target customer GUID.</param>
+    /// <param name="dryRun">If true, only reports what would be migrated without making changes.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("migrate-project/{projectId:guid}")]
+    [RequirePermission(UploadPermissions.StorageManage, RequireLiveCheck = true)]
+    [ProducesResponseType(typeof(MigrateProjectFilesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> MigrateProject(
+        [FromRoute] Guid projectId,
+        [FromQuery] Guid customerId,
+        [FromQuery] bool dryRun = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (projectId == Guid.Empty)
+            return BadRequest(new { error = "projectId is required." });
+
+        if (customerId == Guid.Empty)
+            return BadRequest(new { error = "customerId is required." });
+
+        var projectIdPrefix = projectId.ToString();
+
+        var filesToMigrate = await _dbContext.FileMetadata
+            .Where(f => f.StoragePath.StartsWith($"projects/{projectIdPrefix}/"))
+            .ToListAsync(cancellationToken);
+
+        _logger.LogInformation("Found {Count} files to migrate for project {ProjectId}", filesToMigrate.Count, projectId);
+
+        var migrated = new List<MigratedFileEntry>();
+        var errors = new List<string>();
+
+        foreach (var file in filesToMigrate)
+        {
+            var newPath = $"customers/{customerId}/{file.StoragePath}";
+
+            if (dryRun)
+            {
+                migrated.Add(new MigratedFileEntry
+                {
+                    FileId = file.FileId,
+                    OldPath = file.StoragePath,
+                    NewPath = newPath
+                });
+                continue;
+            }
+
+            try
+            {
+                await _storageService.CopyFileAsync(file.StoragePath, newPath, cancellationToken);
+                var oldPath = file.StoragePath;
+                file.StoragePath = newPath;
+                await _storageService.DeleteFileAsync(oldPath, cancellationToken);
+
+                migrated.Add(new MigratedFileEntry
+                {
+                    FileId = file.FileId,
+                    OldPath = oldPath,
+                    NewPath = newPath
+                });
+
+                _logger.LogInformation("Migrated file {FileId}: {OldPath} → {NewPath}", file.FileId, oldPath, newPath);
+            }
+            catch (Exception ex)
+            {
+                var msg = $"Failed to migrate {file.FileId} ({file.StoragePath}): {ex.Message}";
+                errors.Add(msg);
+                _logger.LogError(ex, "Migration failed for file {FileId}", file.FileId);
+            }
+        }
+
+        if (!dryRun && migrated.Count > 0)
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Persisted {Count} path updates to database for project {ProjectId}", migrated.Count, projectId);
+        }
+
+        return Ok(new MigrateProjectFilesResponse
+        {
+            DryRun = dryRun,
+            TotalEvaluated = filesToMigrate.Count,
+            TotalMigrated = migrated.Count,
+            MigratedFiles = migrated,
+            Errors = errors
+        });
+    }
 }
 
 /// <summary>
