@@ -95,6 +95,15 @@ public interface IStorageService
     /// <param name="targetStorageClass">The target storage class (NEARLINE, COLDLINE, ARCHIVE).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task UpdateStorageClassAsync(string storagePath, string targetStorageClass, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Copies a file from one storage path to another (may be cross-bucket if paths resolve to different buckets).
+    /// </summary>
+    /// <param name="sourcePath">The source storage path.</param>
+    /// <param name="destinationPath">The destination storage path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Upload result for the copied file.</returns>
+    Task<StorageUploadResult> CopyFileAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

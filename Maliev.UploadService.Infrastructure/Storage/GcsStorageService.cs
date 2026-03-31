@@ -46,6 +46,7 @@ public class GcsStorageService : IStorageService
     private string GetBucketForPath(string storagePath)
     {
         if (storagePath.StartsWith("customer-", StringComparison.OrdinalIgnoreCase) ||
+            storagePath.StartsWith("customers/", StringComparison.OrdinalIgnoreCase) ||
             storagePath.Contains("/customers/", StringComparison.OrdinalIgnoreCase) ||
             storagePath.Contains("/onboarding/", StringComparison.OrdinalIgnoreCase) ||
             storagePath.Contains("/kyc/", StringComparison.OrdinalIgnoreCase))
@@ -277,6 +278,31 @@ public class GcsStorageService : IStorageService
             obj,
             new PatchObjectOptions(),
             cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<StorageUploadResult> CopyFileAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
+    {
+        var sourceBucket = GetBucketForPath(sourcePath);
+        var destinationBucket = GetBucketForPath(destinationPath);
+
+        _logger.LogInformation("Copying file from {SourceBucket}/{SourcePath} to {DestBucket}/{DestPath}",
+            sourceBucket, sourcePath, destinationBucket, destinationPath);
+
+        var copiedObject = await _storageClient.CopyObjectAsync(
+            sourceBucket, sourcePath,
+            destinationBucket, destinationPath,
+            cancellationToken: cancellationToken);
+
+        return new StorageUploadResult
+        {
+            StoragePath = copiedObject.Name,
+            ContentType = copiedObject.ContentType,
+            SizeBytes = (long)(copiedObject.Size ?? 0),
+            UploadedAt = copiedObject.TimeCreatedDateTimeOffset?.UtcDateTime ?? DateTime.UtcNow,
+            ETag = copiedObject.ETag,
+            Md5Hash = copiedObject.Md5Hash
+        };
     }
 
     private async Task<string> InitiateGcsResumableUploadAsync(

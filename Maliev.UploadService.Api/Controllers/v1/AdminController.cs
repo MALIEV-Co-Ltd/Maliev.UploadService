@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Asp.Versioning;
 using Maliev.Aspire.ServiceDefaults.Authorization;
 using Maliev.UploadService.Api.Consumers;
@@ -5,9 +6,12 @@ using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
+using Maliev.UploadService.Application.Interfaces;
+using Maliev.UploadService.Infrastructure.Persistence;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Maliev.UploadService.Api.Controllers.v1;
 
@@ -20,8 +24,10 @@ namespace Maliev.UploadService.Api.Controllers.v1;
 [Authorize]
 public class AdminController : ControllerBase
 {
-    private readonly IBulkDeleteService _bulkDeleteService;
+    private readonly Application.Interfaces.IBulkDeleteService _bulkDeleteService;
     private readonly IPublishEndpoint _publishEndpoint;
+    private readonly Application.Interfaces.IStorageService _storageService;
+    private readonly UploadDbContext _dbContext;
     private readonly ILogger<AdminController> _logger;
 
     /// <summary>
@@ -29,14 +35,20 @@ public class AdminController : ControllerBase
     /// </summary>
     /// <param name="bulkDeleteService">The bulk delete service.</param>
     /// <param name="publishEndpoint">The MassTransit publish endpoint.</param>
+    /// <param name="storageService">The GCS storage service.</param>
+    /// <param name="dbContext">The upload database context.</param>
     /// <param name="logger">The logger for this controller.</param>
     public AdminController(
-        IBulkDeleteService bulkDeleteService,
+        Application.Interfaces.IBulkDeleteService bulkDeleteService,
         IPublishEndpoint publishEndpoint,
+        Application.Interfaces.IStorageService storageService,
+        UploadDbContext dbContext,
         ILogger<AdminController> logger)
     {
         _bulkDeleteService = bulkDeleteService;
         _publishEndpoint = publishEndpoint;
+        _storageService = storageService;
+        _dbContext = dbContext;
         _logger = logger;
     }
 
@@ -136,4 +148,150 @@ public class AdminController : ControllerBase
             Errors = job.Errors
         });
     }
+
+    /// <summary>
+    /// POST /api/v1/admin/migrate-project-files - Migrates project files from maliev-temp
+    /// to maliev-customers bucket by rewriting paths from <c>projects/{projectId}/...</c>
+    /// to <c>customers/{customerId}/projects/{projectId}/...</c>.
+    /// </summary>
+    /// <param name="request">Mapping of projectId → customerId for files to migrate.</param>
+    /// <param name="dryRun">If true, only reports what would be migrated without making changes.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("migrate-project-files")]
+    [RequirePermission(UploadPermissions.AdminAll, RequireLiveCheck = true)]
+    [ProducesResponseType(typeof(MigrateProjectFilesResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> MigrateProjectFiles(
+        [FromBody] MigrateProjectFilesRequest request,
+        [FromQuery] bool dryRun = false,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.ProjectCustomerMap == null || request.ProjectCustomerMap.Count == 0)
+            return BadRequest(new { error = "projectCustomerMap is required and must not be empty." });
+
+        var migrated = new List<MigratedFileEntry>();
+        var errors = new List<string>();
+
+        // Find all FileMetadata records with paths starting with "projects/"
+        var filesToMigrate = await _dbContext.FileMetadata
+            .Where(f => f.StoragePath.StartsWith("projects/"))
+            .ToListAsync(cancellationToken);
+
+        _logger.LogInformation("Found {Count} files with 'projects/' prefix to evaluate for migration", filesToMigrate.Count);
+
+        // Regex to extract projectId from path: projects/{projectId}/...
+        var projectIdPattern = new Regex(@"^projects/([0-9a-fA-F\-]{36})/", RegexOptions.Compiled);
+
+        foreach (var file in filesToMigrate)
+        {
+            var match = projectIdPattern.Match(file.StoragePath);
+            if (!match.Success) continue;
+
+            var projectId = match.Groups[1].Value;
+            if (!request.ProjectCustomerMap.TryGetValue(projectId, out var customerId))
+            {
+                _logger.LogDebug("Skipping file {Path} — projectId {ProjectId} not in migration map", file.StoragePath, projectId);
+                continue;
+            }
+
+            // Rewrite path: projects/{projectId}/... → customers/{customerId}/projects/{projectId}/...
+            var newPath = $"customers/{customerId}/{file.StoragePath}";
+
+            if (dryRun)
+            {
+                migrated.Add(new MigratedFileEntry
+                {
+                    FileId = file.FileId,
+                    OldPath = file.StoragePath,
+                    NewPath = newPath
+                });
+                continue;
+            }
+
+            try
+            {
+                await _storageService.CopyFileAsync(file.StoragePath, newPath, cancellationToken);
+                var oldPath = file.StoragePath;
+                file.StoragePath = newPath;
+                await _storageService.DeleteFileAsync(oldPath, cancellationToken);
+
+                migrated.Add(new MigratedFileEntry
+                {
+                    FileId = file.FileId,
+                    OldPath = oldPath,
+                    NewPath = newPath
+                });
+
+                _logger.LogInformation("Migrated file {FileId}: {OldPath} → {NewPath}", file.FileId, oldPath, newPath);
+            }
+            catch (Exception ex)
+            {
+                var msg = $"Failed to migrate {file.FileId} ({file.StoragePath}): {ex.Message}";
+                errors.Add(msg);
+                _logger.LogError(ex, "Migration failed for file {FileId}", file.FileId);
+            }
+        }
+
+        if (!dryRun && migrated.Count > 0)
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Persisted {Count} path updates to database", migrated.Count);
+        }
+
+        return Ok(new MigrateProjectFilesResponse
+        {
+            DryRun = dryRun,
+            TotalEvaluated = filesToMigrate.Count,
+            TotalMigrated = migrated.Count,
+            MigratedFiles = migrated,
+            Errors = errors
+        });
+    }
+}
+
+/// <summary>
+/// Request body for the project file migration endpoint.
+/// </summary>
+public class MigrateProjectFilesRequest
+{
+    /// <summary>
+    /// Maps projectId (string GUID) → customerId (string GUID) for files to migrate.
+    /// </summary>
+    public Dictionary<string, string> ProjectCustomerMap { get; set; } = new();
+}
+
+/// <summary>
+/// Response from the project file migration endpoint.
+/// </summary>
+public class MigrateProjectFilesResponse
+{
+    /// <summary>Gets or sets whether this was a dry run with no actual changes.</summary>
+    public bool DryRun { get; set; }
+
+    /// <summary>Gets or sets the total number of files evaluated for migration.</summary>
+    public int TotalEvaluated { get; set; }
+
+    /// <summary>Gets or sets the total number of files successfully migrated.</summary>
+    public int TotalMigrated { get; set; }
+
+    /// <summary>Gets or sets the list of individual file migration results.</summary>
+    public List<MigratedFileEntry> MigratedFiles { get; set; } = new();
+
+    /// <summary>Gets or sets any errors encountered during migration.</summary>
+    public List<string> Errors { get; set; } = new();
+}
+
+/// <summary>
+/// Represents a single migrated file with old and new paths.
+/// </summary>
+public class MigratedFileEntry
+{
+    /// <summary>Gets or sets the unique identifier of the migrated file.</summary>
+    public string FileId { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the original storage path before migration.</summary>
+    public string OldPath { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the new storage path after migration.</summary>
+    public string NewPath { get; set; } = string.Empty;
 }

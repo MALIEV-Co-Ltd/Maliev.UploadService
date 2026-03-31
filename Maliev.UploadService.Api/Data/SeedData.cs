@@ -257,6 +257,24 @@ public static class SeedData
             StorageClassTransitions = null // STANDARD only, auto-delete after 30 days
         };
 
+        var customerProjectFilesPolicy = new RetentionPolicy
+        {
+            PolicyId = Guid.NewGuid().ToString(),
+            PolicyName = "Customer Project Files (7 years)",
+            RetentionDays = 2555, // ~7 years
+            ApplyToPathPrefix = "customers/",
+            ServiceId = null, // Applies across services
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            StorageClassTransitions = new List<StorageClassTransition>
+            {
+                new StorageClassTransition { Days = 90, StorageClass = "NEARLINE" },
+                new StorageClassTransition { Days = 365, StorageClass = "COLDLINE" },
+                new StorageClassTransition { Days = 1825, StorageClass = "ARCHIVE" } // 5 years
+            }
+        };
+
         context.RetentionPolicies.AddRange(
             shortTermPolicy,
             mediumTermPolicy,
@@ -265,12 +283,13 @@ public static class SeedData
             customerDocumentsPolicy,
             financialRecordsPolicy,
             operationsPolicy,
-            tempDevPolicy
+            tempDevPolicy,
+            customerProjectFilesPolicy
         );
 
         await context.SaveChangesAsync();
 
         logger.LogInformation("Successfully seeded {AuthPolicyCount} authorization policies and {RetentionPolicyCount} retention policies",
-            3, 8);
+            3, 9);
     }
 }

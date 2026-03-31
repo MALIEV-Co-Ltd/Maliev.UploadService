@@ -120,4 +120,19 @@ public class MockStorageService : IStorageService
         _logger.LogInformation("MOCK: Updating storage class of {StoragePath} to {StorageClass}", storagePath, targetStorageClass);
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc/>
+    public Task<StorageUploadResult> CopyFileAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("MOCK: Copying file from {SourcePath} to {DestPath}", sourcePath, destinationPath);
+        return Task.FromResult(new StorageUploadResult
+        {
+            StoragePath = destinationPath,
+            ContentType = "application/octet-stream",
+            SizeBytes = 0,
+            UploadedAt = DateTime.UtcNow,
+            ETag = Guid.NewGuid().ToString(),
+            Md5Hash = "mock-md5"
+        });
+    }
 }
