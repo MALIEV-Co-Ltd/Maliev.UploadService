@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.RegularExpressions;
 using Asp.Versioning;
 using Maliev.Aspire.ServiceDefaults.Authorization;
@@ -338,6 +339,43 @@ public class AdminController : ControllerBase
             MigratedFiles = migrated,
             Errors = errors
         });
+    }
+
+    /// <summary>
+    /// Copies a GCS object from one storage path to another.
+    /// Cross-bucket copies are supported when the paths resolve to different buckets.
+    /// Used by the BFF to migrate derived artifacts (e.g. _viewer.glb) that are not
+    /// tracked in FileMetadata after the original file has been migrated.
+    /// </summary>
+    /// <param name="sourcePath">The source storage path.</param>
+    /// <param name="destinationPath">The destination storage path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("copy-file")]
+    [RequirePermission(UploadPermissions.StorageManage, RequireLiveCheck = true)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CopyFile(
+        [FromQuery] string sourcePath,
+        [FromQuery] string destinationPath,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+            return BadRequest("sourcePath is required.");
+
+        if (string.IsNullOrWhiteSpace(destinationPath))
+            return BadRequest("destinationPath is required.");
+
+        try
+        {
+            var result = await _storageService.CopyFileAsync(sourcePath, destinationPath, cancellationToken);
+            return Ok(new { StoragePath = result.StoragePath, SizeBytes = result.SizeBytes });
+        }
+        catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogWarning("CopyFile: source object not found at {SourcePath}", sourcePath);
+            return NotFound($"Source object not found: {sourcePath}");
+        }
     }
 }
 
