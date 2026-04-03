@@ -2,23 +2,45 @@
 
 This document provides essential instructions for AI agents working on the Maliev.UploadService repository.
 
+> **Workspace root** `B:\maliev` contains **41 independent git repos**. Each `Maliev.*` folder and `maliev-gitops` is its own repo. There is no single repo at the workspace root. Always work within the target service directory.
+
+---
+
 ## 1. Environment & Build
 
 - **Platform:** .NET 10.0 (C#)
 - **Framework:** ASP.NET Core Web API
-- **Solution File:** `Maliev.UploadService.slnx` (Treat as `.sln`)
+- **Solution File:** `Maliev.UploadService.slnx` (preferred over `.sln`)
 
 ### Commands
 
-| Action | Command |
-|--------|---------|
-| **Build Solution** | `dotnet build` |
-| **Run All Tests** | `dotnet test` |
-| **Run Specific Test** | `dotnet test --filter "FullyQualifiedName~Namespace.ClassName.MethodName"` |
-| **Run Tests in File** | `dotnet test --filter "FullyQualifiedName~Namespace.ClassName"` |
-| **Clean** | `dotnet clean` |
-| **Restore** | `dotnet restore` |
-| **Format Code** | `dotnet format` |
+All commands run from within this service directory (`B:\maliev\Maliev.UploadService`).
+
+```powershell
+# Build (treats warnings as errors — all must be fixed)
+dotnet build Maliev.UploadService.slnx
+
+# Run all tests
+dotnet test Maliev.UploadService.slnx --verbosity normal
+
+# Run a single test method
+dotnet test --filter "FullyQualifiedName~Namespace.ClassName.MethodName"
+
+# Run all tests in a class
+dotnet test --filter "FullyQualifiedName~Namespace.ClassName"
+
+# Run with code coverage
+dotnet test Maliev.UploadService.slnx --collect:"XPlat Code Coverage"
+
+# Format check
+dotnet format Maliev.UploadService.slnx
+
+# Clean
+dotnet clean Maliev.UploadService.slnx
+
+# Restore
+dotnet restore Maliev.UploadService.slnx
+```
 
 **Important:** `TreatWarningsAsErrors` is enabled. All warnings must be resolved for the build to pass.
 
@@ -36,57 +58,67 @@ This document provides essential instructions for AI agents working on the Malie
   - `Unit/`: Unit tests.
   - `Integration/`: Integration tests using Testcontainers.
 
+---
+
 ## 3. Code Style & Conventions
 
-### General
-- **Formatting:** Follow standard C# conventions (K&R braces, 4-space indentation).
-- **Naming:**
-  - Classes/Methods/Properties: `PascalCase`
-  - Local Variables/Parameters: `camelCase`
-  - Private Fields: `_camelCase` (e.g., `_storageService`)
-- **Async/Await:** Use `async/await` for all I/O-bound operations. Avoid `.Result` or `.Wait()`.
-- **Var:** Use `var` when the type is obvious from the right-hand side.
+### C# Naming & Formatting
+- **Namespaces**: File-scoped (`namespace Maliev.UploadService.Api.Controllers;`)
+- **Classes/Methods/Properties**: `PascalCase`
+- **Private fields**: `_camelCase` (underscore prefix)
+- **Parameters/locals**: `camelCase`
+- **Async methods**: Suffix with `Async` (e.g., `UploadFileAsync`)
+- **Interfaces**: Prefix with `I` (e.g., `IStorageService`)
+- **Permissions**: GCP-style `{domain}.{plural-resource}.{action}` as `public const string` in a `Permissions` static class
+  - Valid: `upload.uploads.create`, `upload.files.delete`
+  - Invalid: `upload.upload.create` (singular), `upload.create` (missing resource)
+- **XML docs**: Required on ALL public methods and properties
+- **Nullable**: Enabled (`<Nullable>enable</Nullable>`). Use `?` explicitly
+- **Imports**: System first, then third-party, then local. Alphabetize within groups. Remove unused `using`
+- **Braces**: Allman style (new line) for methods and control structures. Expression-bodied for properties/accessors
+- **Indentation**: 4 spaces, LF line endings, UTF-8, trim trailing whitespace
 
-### API Controllers
-- Use `[ApiController]` and `[Route("upload/v{version:apiVersion}/[controller]")]`.
-- Inherit from `ControllerBase`.
-- Use `[HttpGet]`, `[HttpPost]`, etc., with explicit routes if needed.
-- Return `IActionResult` (e.g., `Ok()`, `NotFound()`, `Forbid()`).
-- Use `[ProducesResponseType]` for documentation.
-- **Authorization:** Use `[RequirePermission(UploadPermissions.X, RequireLiveCheck = true)]`.
+### C# Patterns
+- **DI**: Constructor injection with `private readonly` fields
+- **Controllers**: `[ApiController]`, `[ApiVersion("1")]`, `[Route("upload/v{version:apiVersion}/[controller]")]`
+- **Logging**: `ILogger<T>` with structured placeholders (never interpolate): `_logger.LogInformation("Processing {UploadId}", uploadId)`
+- **Error handling**: Global exception middleware. Return `ProblemDetails` / `ErrorResponse` DTOs. Never expose stack traces
+- **Manual mapping**: Static extension methods (`ToDto()`, `ToEntity()`). AutoMapper is banned
+- **Validation**: `System.ComponentModel.DataAnnotations` on DTOs. FluentValidation is banned
+- **Authorization**: Use `[RequirePermission(UploadPermissions.X, RequireLiveCheck = true)]`
 
-### Dependency Injection
-- Use constructor injection.
-- Register services in `Program.cs`.
-- Use scoped lifetime for services by default (`builder.Services.AddScoped<I..., ...>`).
+### Logging & Observability
+- Use `LogFileEventAsync` for audit trails in controllers.
 
 ### Database (EF Core)
 - Entities in `Maliev.UploadService.Data/Entities`.
 - Use `UploadDbContext`.
 - Always use `await _dbContext.SaveChangesAsync(cancellationToken)`.
 
-### Logging & Observability
-- Inject `ILogger<T>`.
-- Use structured logging (e.g., `_logger.LogInformation("Processing {UploadId}", uploadId)`).
-- Use `LogFileEventAsync` for audit trails in controllers.
+---
 
-### Error Handling
-- Use `try-catch` in services/controllers if specific handling is needed.
-- Global exception handling is configured via middleware.
-- Throw specific exceptions (e.g., `InvalidOperationException`, `ArgumentException`) which middleware maps to HTTP status codes.
+## Banned Libraries (Build Will Fail)
+
+| Banned | Use Instead |
+|--------|-------------|
+| AutoMapper | Manual mapping extensions |
+| FluentValidation | DataAnnotations or manual validation |
+| FluentAssertions | Standard xUnit `Assert.*` |
+| Swashbuckle/Swagger | Scalar (at `/upload/scalar`) |
+| InMemoryDatabase (EF Core) | Testcontainers with real PostgreSQL |
+
+---
 
 ## 4. Testing Guidelines
 
-- **Framework:** xUnit
+- **Framework**: xUnit with standard `Assert` (`Assert.Equal`, `Assert.NotNull`, etc.)
 - **Mocking:** Moq
-- **Integration Tests:** Use `Testcontainers` (Postgres, RabbitMQ, Redis).
-- **Naming:** `MethodName_Condition_ExpectedResult` (e.g., `GetFileMetadata_WhenFileExists_ReturnsMetadata`).
-- **Structure:** AAA (Arrange, Act, Assert).
-
-### Example: Running a Single Test
-```bash
-dotnet test --filter "FullyQualifiedName~Maliev.UploadService.Tests.Integration.FilesControllerTests.GetFileMetadata_Success"
-```
+- **Naming**: `MethodName_StateUnderTest_ExpectedBehavior` or `HTTP_METHOD_Path_Scenario_ExpectedStatus`
+- **Coverage**: Minimum 80% per service
+- **Integration tests**: `BaseIntegrationTestFactory<TProgram, TDbContext>` with Testcontainers (PostgreSQL, Redis, RabbitMQ). Never InMemoryDatabase
+- **Eventual consistency**: Use `TestHelpers.WaitForAsync`. Never `Task.Delay`
+- **MassTransit consumers**: Must have consumer tests using `AddMassTransitTestHarness()`
+- Use `[Fact]` for single cases, `[Theory]` for parameterized tests
 
 ### Testing Strategy (4-Tier Pyramid Context)
 
@@ -99,16 +131,24 @@ This service's tests cover **Tier 1 (Unit)** and **Tier 2 (Service Integration)*
 
 **Tier 3 (System Integration)** — cross-service workflows and event chains — is tested in `Maliev.Aspire.Tests/`.
 
-#### Key Rules
-- Use `BaseIntegrationTestFactory<TProgram, TDbContext>` for integration tests (real Testcontainers, never InMemoryDatabase)
-- Every MassTransit consumer MUST have a consumer test using `services.AddMassTransitTestHarness()`
-- Test naming: `MethodName_StateUnderTest_ExpectedBehavior`
-- Minimum 80% code coverage
-- Use `[Fact]` for single cases, `[Theory]` for parameterized tests
-
 > Full ecosystem test strategy: `Maliev.Aspire.Tests/TEST_PLAN.md`
 
-## 5. Agent Behavior Rules
+---
+
+## 5. Mandatory Rules
+
+- **`TreatWarningsAsErrors = true`**: Zero warnings allowed. No suppression
+- **`[RequirePermission("upload.resources.action")]`**: On all endpoints, not plain `[Authorize]`
+- **API versioning**: All routes versioned (`v1/`)
+- **Service prefix**: Routes prefixed with service domain (`/upload`)
+- **Scalar docs**: Configured at `/upload/scalar`
+- **Secrets**: Never hardcoded. Use GCP Secret Manager or environment variables
+- **Async/await**: All the way down. Pass `CancellationToken`
+- **EF Core Design package**: Only in Data project, never in Api
+- **PostgreSQL xmin**: Shadow property only — `entity.Property<uint>("xmin").HasColumnType("xid").IsRowVersion()`. Never add entity property
+- **Temporary files**: Generate in `/temp` folder, clean up afterwards
+
+### Agent Behavior Rules
 
 - **Safety First:** verify `Directory.Build.props` or `csproj` settings before changing build configurations.
 - **Pathing:** Always use **absolute paths** for file operations.
@@ -116,29 +156,25 @@ This service's tests cover **Tier 1 (Unit)** and **Tier 2 (Service Integration)*
 - **Testing:** If modifying logic, run relevant tests to ensure no regression.
 - **No Hallucination:** Do not invent libraries or helper methods. Check existing `Extensions/` or `Services/` first.
 
+---
 
-## Git & Version Control — Mandatory Rules
+## Git Rules
 
-### 🚨 CRITICAL: Always Commit Code Changes (Non-Negotiable)
-- **You MUST commit your changes to the local repository after completing any meaningful unit of work.**
-- **Never accumulate uncommitted changes.** Do not wait until end of session or until something breaks.
-- **Commit early and often** — if a change is meaningful (even a small fix or refactor), commit it.
-- **You do NOT need to push to remote** — local commits are sufficient to protect against accidental loss.
-- **If you are unsure whether to commit, commit anyway.** Extra commits are harmless; lost work is irreversible.
-- This rule applies even if you are just "testing" or "exploring" — use git branches to isolate experimental work and commit those changes too.
+- Each `Maliev.*` folder is an independent git repo. `cd` into it before git commands
+- **Commit early and often** after every meaningful unit of work. Do not accumulate changes
+- **Never use `git checkout` to restore files** — commit first, then `git revert` or `git reset --soft`
+- Feature branches merged to `develop` via PR. Do not push without being asked
 
-### 🚨 CRITICAL: Never Use `git checkout` to Restore Broken Files
-- **NEVER use `git checkout` to restore or recover files.** This operation discards uncommitted changes permanently and will result in data loss.
-- **To undo/recover from broken files: first commit your current changes, then use `git revert` or `git reset --soft` to safely undo.**
+---
 
 ## Database & EF Core — Mandatory Rules
 
 ### EF Core Design Package
 - ❌ `Microsoft.EntityFrameworkCore.Design` MUST NOT be in Api projects
 - ✅ It belongs ONLY in the Infrastructure (or Data) project where migrations live
-- Migration commands must target Infrastructure as both project and startup-project (since EF Core Design package is in Infrastructure):
+- Migration commands must target Data as both project and startup-project:
   ```
-  dotnet ef migrations add <Name> --project Maliev.<Domain>Service.Infrastructure --startup-project Maliev.<Domain>Service.Infrastructure
+  dotnet ef migrations add <Name> --project Maliev.UploadService.Data --startup-project Maliev.UploadService.Data
   ```
 
 ### PostgreSQL xmin Concurrency — Mandatory Pattern
