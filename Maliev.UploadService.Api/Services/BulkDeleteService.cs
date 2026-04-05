@@ -1,3 +1,4 @@
+using Maliev.UploadService.Application.Interfaces;
 using Maliev.UploadService.Domain.Entities;
 using Maliev.UploadService.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;

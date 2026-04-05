@@ -24,7 +24,6 @@ namespace Maliev.UploadService.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1")]
 [Route("upload/v{version:apiVersion}/files")]
-[Authorize]
 public class FilesController : ControllerBase
 {
     private readonly IStorageService _storageService;

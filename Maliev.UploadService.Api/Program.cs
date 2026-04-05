@@ -133,7 +133,7 @@ try
     builder.Services.AddScoped<ILifecycleManagementService, LifecycleManagementService>();
 
     // T175: Register BulkDeleteService
-    builder.Services.AddScoped<IBulkDeleteService, BulkDeleteService>();
+    builder.Services.AddScoped<Maliev.UploadService.Application.Interfaces.IBulkDeleteService, BulkDeleteService>();
 
     // T135: Register LifecyclePolicyWorker background service
     builder.Services.AddHostedService<LifecyclePolicyWorker>();
@@ -173,10 +173,25 @@ try
             var config = sp.GetRequiredService<IConfiguration>();
             return new GcsStorageService(storageClient, config, httpClientFactory, credential);
         });
+
+        // Register the Infrastructure IStorageService (Application.Interfaces namespace) for
+        // components (e.g. AdminController) that depend on the extended interface with CopyFileAsync.
+        builder.Services.AddScoped<Maliev.UploadService.Application.Interfaces.IStorageService>(sp =>
+        {
+            var storageClient = sp.GetRequiredService<Google.Cloud.Storage.V1.StorageClient>();
+            var credential = sp.GetRequiredService<Google.Apis.Auth.OAuth2.GoogleCredential>();
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+            var config = sp.GetRequiredService<IConfiguration>();
+            var logger = sp.GetRequiredService<ILogger<Maliev.UploadService.Infrastructure.Storage.GcsStorageService>>();
+            return new Maliev.UploadService.Infrastructure.Storage.GcsStorageService(
+                storageClient, config, httpClientFactory, credential, logger);
+        });
     }
     else
     {
         builder.Services.AddScoped<IStorageService, MockStorageService>();
+        builder.Services.AddScoped<Maliev.UploadService.Application.Interfaces.IStorageService,
+            Maliev.UploadService.Infrastructure.Storage.MockStorageService>();
     }
 
     // T186: Register UploadMetrics for OpenTelemetry instrumentation (Constitution Principle XII)

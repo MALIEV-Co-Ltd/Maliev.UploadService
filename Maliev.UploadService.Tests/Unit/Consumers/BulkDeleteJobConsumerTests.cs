@@ -1,5 +1,5 @@
 using Maliev.UploadService.Api.Consumers;
-using Maliev.UploadService.Api.Services;
+using Maliev.UploadService.Application.Interfaces;
 using MassTransit;
 using Microsoft.Extensions.Logging;
 using Moq;

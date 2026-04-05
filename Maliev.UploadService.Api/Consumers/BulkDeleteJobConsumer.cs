@@ -1,4 +1,4 @@
-using Maliev.UploadService.Api.Services;
+using Maliev.UploadService.Application.Interfaces;
 using MassTransit;
 
 namespace Maliev.UploadService.Api.Consumers;

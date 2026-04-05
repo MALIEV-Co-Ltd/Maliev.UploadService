@@ -24,7 +24,6 @@ namespace Maliev.UploadService.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1")]
 [Route("upload/v{version:apiVersion}/uploads")]
-[Authorize]
 public class UploadsController : ControllerBase
 {
     private readonly IValidationService _validationService;

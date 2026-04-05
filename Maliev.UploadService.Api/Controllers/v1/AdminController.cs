@@ -22,7 +22,6 @@ namespace Maliev.UploadService.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1")]
 [Route("upload/v{version:apiVersion}/admin")]
-[Authorize]
 public class AdminController : ControllerBase
 {
     private readonly Application.Interfaces.IBulkDeleteService _bulkDeleteService;
@@ -321,7 +320,8 @@ public class AdminController : ControllerBase
             {
                 var msg = $"Failed to migrate {file.FileId} ({file.StoragePath}): {ex.Message}";
                 errors.Add(msg);
-                _logger.LogError(ex, "Migration failed for file {FileId}", file.FileId);
+                _logger.LogError(ex, "Migration failed for file {FileId} at path {StoragePath}: {ErrorMessage}",
+                    file.FileId, file.StoragePath, ex.Message);
             }
         }
 
