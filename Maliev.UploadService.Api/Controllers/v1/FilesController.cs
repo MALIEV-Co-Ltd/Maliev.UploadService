@@ -342,6 +342,16 @@ public class FilesController : ControllerBase
                 }
             }
 
+            // Verify the object exists before signing — avoids handing out a URL that 404s on use.
+            var exists = await _storageService.FileExistsAsync(request.StoragePath, cancellationToken);
+            if (!exists)
+            {
+                _logger.LogWarning(
+                    "Object not found in GCS for path: {StoragePath} — returning 410",
+                    request.StoragePath);
+                return StatusCode(StatusCodes.Status410Gone, new { error = "file_missing", storagePath = request.StoragePath });
+            }
+
             // Generate new signed URL directly from storage path
             var expiration = TimeSpan.FromMinutes(request.ExpirationMinutes);
             signedUrl = await _storageService.GenerateSignedUrlAsync(
