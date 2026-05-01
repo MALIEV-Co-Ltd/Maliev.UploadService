@@ -213,7 +213,6 @@ public class AdminController : ControllerBase
                 await _storageService.CopyFileAsync(file.StoragePath, newPath, cancellationToken);
                 var oldPath = file.StoragePath;
                 file.StoragePath = newPath;
-                await _storageService.DeleteFileAsync(oldPath, cancellationToken);
 
                 migrated.Add(new MigratedFileEntry
                 {
@@ -222,7 +221,11 @@ public class AdminController : ControllerBase
                     NewPath = newPath
                 });
 
-                _logger.LogInformation("Migrated file {FileId}: {OldPath} → {NewPath}", file.FileId, oldPath, newPath);
+                _logger.LogInformation(
+                    "Migrated file {FileId}: {OldPath} → {NewPath}. Old object retained temporarily so in-flight signed URLs remain valid.",
+                    file.FileId,
+                    oldPath,
+                    newPath);
             }
             catch (Exception ex)
             {
@@ -305,7 +308,6 @@ public class AdminController : ControllerBase
                 await _storageService.CopyFileAsync(file.StoragePath, newPath, cancellationToken);
                 var oldPath = file.StoragePath;
                 file.StoragePath = newPath;
-                await _storageService.DeleteFileAsync(oldPath, cancellationToken);
 
                 migrated.Add(new MigratedFileEntry
                 {
@@ -314,7 +316,11 @@ public class AdminController : ControllerBase
                     NewPath = newPath
                 });
 
-                _logger.LogInformation("Migrated file {FileId}: {OldPath} → {NewPath}", file.FileId, oldPath, newPath);
+                _logger.LogInformation(
+                    "Migrated file {FileId}: {OldPath} → {NewPath}. Old object retained temporarily so in-flight signed URLs remain valid.",
+                    file.FileId,
+                    oldPath,
+                    newPath);
             }
             catch (Exception ex)
             {
