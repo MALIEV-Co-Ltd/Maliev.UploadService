@@ -50,8 +50,8 @@ public class FileValidationServiceTests
         var service = new FileValidationService();
         using var stream = new MemoryStream();
 
-        // Simulate 200MB file (exceeds typical limit)
-        var largeFileSize = 200L * 1024 * 1024;
+        // Simulate a file above the 10GB service limit without allocating it.
+        var largeFileSize = 11L * 1024 * 1024 * 1024;
 
         // Act
         var result = await service.ValidateFileAsync(

@@ -162,6 +162,7 @@ public class EndToEndTests : IAsyncLifetime
         var initiateRequest = new
         {
             Path = filePath,
+            FileName = "upload.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
             TotalSize = totalSize

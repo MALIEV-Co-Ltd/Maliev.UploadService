@@ -224,7 +224,8 @@ public class GcsStorageService : IStorageService
         var contentLength = endByte - startByte + 1;
 
         var request = new HttpRequestMessage(HttpMethod.Put, sessionUri);
-        request.Content = new StreamContent(chunkStream, (int)contentLength);
+        request.Content = new StreamContent(chunkStream);
+        request.Content.Headers.ContentLength = contentLength;
         request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
         request.Content.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(startByte, endByte, totalSize);
 
@@ -314,6 +315,10 @@ public class GcsStorageService : IStorageService
         var uploadUrl = $"https://storage.googleapis.com/upload/storage/v1/b/{bucketName}/o?uploadType=resumable";
 
         var request = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
+        var tokenAccess = (Google.Apis.Auth.OAuth2.ITokenAccess)_credential;
+        var accessToken = await tokenAccess.GetAccessTokenForRequestAsync(cancellationToken: cancellationToken);
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.Add("X-Upload-Content-Type", objectMetadata.ContentType);
         var jsonContent = System.Text.Json.JsonSerializer.Serialize(objectMetadata);
         request.Content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
 

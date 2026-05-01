@@ -1,8 +1,8 @@
 using Asp.Versioning;
 using Maliev.Aspire.ServiceDefaults.Authorization;
-using Maliev.MessagingContracts.Contracts.Uploads;
-using Maliev.MessagingContracts.Contracts.Shared;
 using Maliev.MessagingContracts;
+using Maliev.MessagingContracts.Contracts.Shared;
+using Maliev.MessagingContracts.Contracts.Uploads;
 using Maliev.UploadService.Api.Extensions;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
@@ -11,10 +11,8 @@ using Maliev.UploadService.Api.Services.Auth;
 using Maliev.UploadService.Domain.Entities;
 using Maliev.UploadService.Infrastructure.Persistence;
 using MassTransit;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
 
 namespace Maliev.UploadService.Api.Controllers.v1;
 
@@ -29,6 +27,7 @@ public class UploadsController : ControllerBase
     private readonly IValidationService _validationService;
     private readonly IStorageService _storageService;
     private readonly ILifecycleManagementService _lifecycleService;
+    private readonly IAuthorizationPolicyService _authorizationService;
     private readonly UploadDbContext _dbContext;
     private readonly ILogger<UploadsController> _logger;
     private readonly IPublishEndpoint _publishEndpoint;
@@ -36,16 +35,11 @@ public class UploadsController : ControllerBase
     /// <summary>
     /// Initializes a new instance of the UploadsController class.
     /// </summary>
-    /// <param name="validationService">The validation service.</param>
-    /// <param name="storageService">The storage service.</param>
-    /// <param name="lifecycleService">The lifecycle management service.</param>
-    /// <param name="dbContext">The database context.</param>
-    /// <param name="logger">The logger for this controller.</param>
-    /// <param name="publishEndpoint">The MassTransit publish endpoint.</param>
     public UploadsController(
         IValidationService validationService,
         IStorageService storageService,
         ILifecycleManagementService lifecycleService,
+        IAuthorizationPolicyService authorizationService,
         UploadDbContext dbContext,
         ILogger<UploadsController> logger,
         IPublishEndpoint publishEndpoint)
@@ -53,276 +47,14 @@ public class UploadsController : ControllerBase
         _validationService = validationService;
         _storageService = storageService;
         _lifecycleService = lifecycleService;
+        _authorizationService = authorizationService;
         _dbContext = dbContext;
         _logger = logger;
         _publishEndpoint = publishEndpoint;
     }
 
     /// <summary>
-    /// Uploads a file to the storage service and returns the file identifier.
-    /// </summary>
-    [HttpPost]
-    [Consumes("multipart/form-data")]
-    [RequirePermission(UploadPermissions.FilesUpload, ResourcePathTemplate = "folders/{request.Path}")]
-    [ProducesResponseType(typeof(UploadResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> UploadFile(
-        [FromForm] UploadFileRequest request,
-        CancellationToken cancellationToken)
-    {
-        var uploadId = Guid.NewGuid();
-        var serviceName = request.ServiceName ?? User.Identity?.Name ?? "unknown";
-
-        try
-        {
-            // T107: Resolve path placeholders (FR-007, FR-009)
-            var placeholders = new Dictionary<string, string>
-            {
-                { "id", uploadId.ToString("N") }, // Use compact GUID format (no hyphens)
-                { "timestamp", DateTime.UtcNow.ToString("yyyyMMddHHmmss") },
-                { "date", DateTime.UtcNow.ToString("yyyyMMdd") },
-                { "year", DateTime.UtcNow.Year.ToString() },
-                { "month", DateTime.UtcNow.Month.ToString("D2") },
-                { "day", DateTime.UtcNow.Day.ToString("D2") },
-                { "service", serviceName }
-            };
-
-            var resolvedPath = request.Path.ResolvePlaceholders(placeholders);
-
-            // T113: Path sanitization with audit logging for traversal attempts (FR-008, FR-021)
-            string sanitizedPath;
-            try
-            {
-                sanitizedPath = resolvedPath.SanitizePath();
-            }
-            catch (ArgumentException ex)
-            {
-                // T113: Audit log path traversal attempt
-                _logger.LogWarning("Path traversal attempt detected by service {ServiceName}: {OriginalPath} - {Error}",
-                    serviceName, request.Path, ex.Message);
-                await LogUploadEventAsync(uploadId, serviceName, request.Path, "PathTraversalAttempt", cancellationToken);
-                return BadRequest(new { error = $"Invalid path: {ex.Message}" });
-            }
-
-            // T103: Check for path collision (FR-010)
-            var existingUpload = await _dbContext.Uploads
-                .FirstOrDefaultAsync(u => u.StoragePath == sanitizedPath, cancellationToken);
-
-            if (existingUpload != null)
-            {
-                if (!request.Overwrite)
-                {
-                    _logger.LogWarning("File already exists at path {Path} and overwrite is disabled", sanitizedPath);
-                    await LogUploadEventAsync(uploadId, serviceName, sanitizedPath, "PathCollision", cancellationToken);
-                    return Conflict(new { error = $"File already exists at path '{sanitizedPath}'. Set Overwrite=true to replace it." });
-                }
-
-                // Delete existing upload and file metadata before overwriting
-                var existingFileMetadata = await _dbContext.FileMetadata
-                    .FirstOrDefaultAsync(f => f.UploadId == existingUpload.UploadId, cancellationToken);
-
-                if (existingFileMetadata != null)
-                {
-                    _dbContext.FileMetadata.Remove(existingFileMetadata);
-                }
-
-                _dbContext.Uploads.Remove(existingUpload);
-                await _dbContext.SaveChangesAsync(cancellationToken);
-
-                _logger.LogInformation("Overwriting existing file at path {Path}", sanitizedPath);
-            }
-
-            // T076: File validation
-            using var fileStream = request.File.OpenReadStream();
-            var validationResult = await _validationService.ValidateFileAsync(
-                fileStream,
-                request.File.FileName,
-                request.File.ContentType,
-                request.File.Length,
-                cancellationToken);
-
-            if (validationResult.Warnings.Count > 0)
-            {
-                _logger.LogWarning("File validation warnings for {FileName}: {Warnings}",
-                    request.File.FileName, string.Join(", ", validationResult.Warnings));
-            }
-
-            if (!validationResult.IsValid)
-            {
-                _logger.LogWarning("File validation failed for {FileName}: {Errors}",
-                    request.File.FileName, string.Join(", ", validationResult.Errors));
-                await LogUploadEventAsync(uploadId, serviceName, sanitizedPath, "ValidationFailed", cancellationToken);
-                return BadRequest(new { errors = validationResult.Errors });
-            }
-
-            // T077: GCS upload
-            fileStream.Position = 0; // Reset stream after validation
-
-            var uploadResult = await _storageService.UploadFileAsync(
-                fileStream,
-                sanitizedPath,
-                request.File.ContentType,
-                request.Overwrite,
-                cancellationToken);
-
-            // Convert Base64 MD5 from GCS to Hex string format
-            string? checksum = null;
-            if (!string.IsNullOrEmpty(uploadResult.Md5Hash))
-            {
-                try
-                {
-                    checksum = BitConverter.ToString(Convert.FromBase64String(uploadResult.Md5Hash))
-                                           .Replace("-", "").ToLowerInvariant();
-                }
-                catch
-                {
-                    // Fallback if decode fails
-                }
-            }
-            checksum ??= "UNKNOWN";
-
-            // T078: Upload entity persistence
-            var upload = new Upload
-            {
-                UploadId = uploadId.ToString(),
-                ServiceId = serviceName,
-                FileName = request.File.FileName,
-                StoragePath = uploadResult.StoragePath,
-                ContentType = uploadResult.ContentType,
-                FileSize = uploadResult.SizeBytes,
-                BytesUploaded = uploadResult.SizeBytes,
-                Status = UploadStatus.Completed,
-                UploadedAt = uploadResult.UploadedAt,
-                CompletedAt = DateTime.UtcNow
-            };
-
-            _dbContext.Uploads.Add(upload);
-
-            // T079: FileMetadata entity creation
-            var fileMetadata = new FileMetadata
-            {
-                FileId = Guid.NewGuid().ToString(),
-                UploadId = uploadId.ToString(),
-                ServiceId = serviceName,
-                StoragePath = uploadResult.StoragePath,
-                VersionETag = uploadResult.ETag,
-                FileSize = uploadResult.SizeBytes,
-                ContentType = uploadResult.ContentType,
-                Checksum = checksum,
-                UploadedAt = uploadResult.UploadedAt,
-                Metadata = request.Metadata != null
-                    ? new Dictionary<string, string> { { "custom", request.Metadata } }
-                    : null
-            };
-
-            // T132: Apply retention policy if specified or find applicable policy
-            string? retentionPolicyId = request.RetentionPolicyId;
-
-            if (string.IsNullOrEmpty(retentionPolicyId))
-            {
-                // Try to find an applicable retention policy based on service and path
-                var applicablePolicy = await _lifecycleService.GetActiveRetentionPolicyAsync(
-                    serviceName,
-                    sanitizedPath,
-                    cancellationToken);
-
-                if (applicablePolicy != null)
-                {
-                    retentionPolicyId = applicablePolicy.PolicyId;
-                    _logger.LogInformation(
-                        "Auto-applied retention policy {PolicyName} to upload {UploadId}",
-                        applicablePolicy.PolicyName, uploadId);
-                }
-            }
-
-            if (!string.IsNullOrEmpty(retentionPolicyId))
-            {
-                fileMetadata.RetentionPolicyId = retentionPolicyId;
-                var expiresAt = await _lifecycleService.ApplyRetentionPolicyAsync(
-                    fileMetadata,
-                    retentionPolicyId,
-                    cancellationToken);
-
-                fileMetadata.ExpiresAt = expiresAt;
-            }
-
-            _dbContext.FileMetadata.Add(fileMetadata);
-
-            // T080: Audit logging
-            await LogUploadEventAsync(uploadId, serviceName, sanitizedPath, "Success", cancellationToken);
-
-            await _dbContext.SaveChangesAsync(cancellationToken);
-
-            // T081: Metrics instrumentation (using ILogger for now, can be enhanced with OpenTelemetry)
-            _logger.LogInformation(
-                "File uploaded successfully. UploadId: {UploadId}, Service: {ServiceName}, Size: {SizeBytes}",
-                uploadId, serviceName, uploadResult.SizeBytes);
-
-            // Generate signed URL for downstream services (like GeometryService)
-            // Valid for 1 hour
-            var downloadUrl = await _storageService.GenerateSignedUrlAsync(
-                uploadResult.StoragePath,
-                TimeSpan.FromHours(1),
-                cancellationToken);
-
-            // T158: Publish FileUploadedEvent (FR-025)
-            await _publishEndpoint.Publish(new FileUploadedEvent(
-                MessageId: Guid.NewGuid(),
-                MessageName: "FileUploadedEvent",
-                MessageType: MessageType.Event,
-                MessageVersion: "1.0.0",
-                PublishedBy: "UploadService",
-                ConsumedBy: ["GeometryService", "NotificationService"],
-                CorrelationId: Guid.NewGuid(),
-                CausationId: null,
-                OccurredAtUtc: DateTimeOffset.UtcNow,
-                IsPublic: false,
-                Payload: new FileUploadedEventPayload(
-                    UploadId: uploadId.ToString(),
-                    ServiceId: serviceName,
-                    FileName: request.File.FileName,
-                    StoragePath: uploadResult.StoragePath,
-                    ContentType: uploadResult.ContentType,
-                    FileSize: (int)uploadResult.SizeBytes,
-                    DownloadUrl: downloadUrl,
-                    UploadedAt: new DateTimeOffset(uploadResult.UploadedAt, TimeSpan.Zero),
-                    RetentionPolicyId: fileMetadata.RetentionPolicyId,
-                    ExpiresAt: fileMetadata.ExpiresAt.HasValue ? new DateTimeOffset(fileMetadata.ExpiresAt.Value, TimeSpan.Zero) : null,
-                    Metadata: fileMetadata.Metadata!
-                )
-            ), cancellationToken);
-
-            return Ok(upload.ToResponse());
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
-        {
-            // T113: Audit log path collision attempt (FR-010, FR-021)
-            _logger.LogWarning(ex, "Path collision detected for {FileName} at {Path}: {Message}",
-                request.File.FileName, request.Path, ex.Message);
-            await LogUploadEventAsync(uploadId, serviceName, request.Path, "PathCollision", cancellationToken);
-            return Conflict(new { error = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            _logger.LogWarning(ex, "Upload failed for {FileName}: {Message}",
-                request.File.FileName, ex.Message);
-            await LogUploadEventAsync(uploadId, serviceName, request.Path, "Failed", cancellationToken);
-
-            return BadRequest(new { error = ex.Message });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error during file upload. UploadId: {UploadId}", uploadId);
-            await LogUploadEventAsync(uploadId, serviceName, request.Path, "Error", cancellationToken);
-
-            return StatusCode(500, new { error = "An error occurred during file upload" });
-        }
-    }
-
-    /// <summary>
-    /// POST /api/v1/uploads/resumable - Initiates a resumable upload session (FR-022)
+    /// Initiates a direct-to-GCS resumable upload session.
     /// </summary>
     [HttpPost("resumable")]
     [RequirePermission(UploadPermissions.FilesUpload, ResourcePathTemplate = "folders/{request.Path}")]
@@ -330,69 +62,233 @@ public class UploadsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> InitiateResumableUpload(
         [FromBody] InitiateResumableUploadRequest request,
         CancellationToken cancellationToken)
     {
-        var uploadId = Guid.NewGuid();
+        var uploadId = Guid.NewGuid().ToString();
         var serviceName = request.ServiceName ?? User.Identity?.Name ?? "unknown";
 
         try
         {
-            // Path sanitization
-            var sanitizedPath = request.Path.SanitizePath();
+            var sanitizedPath = ResolveUploadPath(request.Path, serviceName, uploadId);
 
-            // Initiate resumable upload session with GCS
+            var validationResult = await _validationService.ValidateFileAsync(
+                Stream.Null,
+                request.FileName,
+                request.ContentType,
+                request.TotalSize,
+                cancellationToken);
+
+            if (!validationResult.IsValid)
+            {
+                _logger.LogWarning(
+                    "Upload validation failed for {FileName}: {Errors}",
+                    request.FileName,
+                    string.Join(", ", validationResult.Errors));
+                await LogUploadEventAsync(uploadId, serviceName, sanitizedPath, "ValidationFailed", cancellationToken);
+                return BadRequest(new { errors = validationResult.Errors });
+            }
+
+            var existingUpload = await _dbContext.Uploads
+                .FirstOrDefaultAsync(u => u.StoragePath == sanitizedPath, cancellationToken);
+
+            if (existingUpload != null)
+            {
+                if (!request.Overwrite)
+                {
+                    await LogUploadEventAsync(uploadId, serviceName, sanitizedPath, "PathCollision", cancellationToken);
+                    return Conflict(new { error = $"File already exists at path '{sanitizedPath}'. Set overwrite=true to replace it." });
+                }
+
+                await RemoveExistingUploadAsync(existingUpload, cancellationToken);
+            }
+
             var session = await _storageService.InitiateResumableUploadAsync(
                 sanitizedPath,
                 request.ContentType,
                 request.TotalSize,
                 cancellationToken);
 
-            // T149: Create Upload entity with session URI tracking
             var upload = new Upload
             {
-                UploadId = uploadId.ToString(),
+                UploadId = uploadId,
                 ServiceId = serviceName,
-                FileName = System.IO.Path.GetFileName(sanitizedPath),
+                FileName = request.FileName,
                 StoragePath = sanitizedPath,
                 ContentType = request.ContentType,
                 FileSize = request.TotalSize,
-                Checksum = request.Checksum, // Store client-provided checksum
+                Checksum = request.Checksum,
                 BytesUploaded = 0,
                 Status = UploadStatus.InProgress,
                 UploadedAt = DateTime.UtcNow,
-                SessionUri = session.SessionUri // Store session URI for resumability
+                SessionUri = session.SessionUri,
+                RetentionPolicyId = request.RetentionPolicyId,
+                Metadata = request.Metadata != null
+                    ? new Dictionary<string, string> { { "custom", request.Metadata } }
+                    : null
             };
 
             _dbContext.Uploads.Add(upload);
+            await LogUploadEventAsync(uploadId, serviceName, sanitizedPath, "Initiated", cancellationToken);
             await _dbContext.SaveChangesAsync(cancellationToken);
 
             _logger.LogInformation(
-                "Resumable upload initiated. UploadId: {UploadId}, Service: {ServiceName}, TotalSize: {TotalSize}",
-                uploadId, serviceName, request.TotalSize);
+                "Direct GCS upload session initiated. UploadId: {UploadId}, Service: {ServiceName}, TotalSize: {TotalSize}",
+                uploadId,
+                serviceName,
+                request.TotalSize);
 
             return Ok(new InitiateResumableUploadResponse
             {
-                UploadId = uploadId.ToString(),
+                UploadId = uploadId,
                 SessionUri = session.SessionUri,
                 ExpiresAt = session.ExpiresAt,
                 TotalSize = request.TotalSize
             });
         }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid upload path for service {ServiceName}: {Path}", serviceName, request.Path);
+            await LogUploadEventAsync(uploadId, serviceName, request.Path, "PathTraversalAttempt", cancellationToken);
+            return BadRequest(new { error = $"Invalid path: {ex.Message}" });
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initiate resumable upload. UploadId: {UploadId}", uploadId);
-            return StatusCode(500, new { error = "Failed to initiate resumable upload" });
+            _logger.LogError(ex, "Failed to initiate direct GCS upload. UploadId: {UploadId}", uploadId);
+            return StatusCode(500, new { error = "Failed to initiate upload" });
         }
     }
 
     /// <summary>
-    /// PUT /api/v1/uploads/resumable/{uploadId} - Continues a resumable upload (FR-022)
+    /// Completes a direct-to-GCS resumable upload after the client has uploaded to GCS.
+    /// </summary>
+    [HttpPost("resumable/{uploadId}/complete")]
+    [RequirePermission(UploadPermissions.FilesUpload)]
+    [ProducesResponseType(typeof(UploadResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CompleteResumableUpload(
+        [FromRoute] string uploadId,
+        [FromBody] CompleteResumableUploadRequest? request,
+        CancellationToken cancellationToken)
+    {
+        var upload = await _dbContext.Uploads
+            .FirstOrDefaultAsync(u => u.UploadId == uploadId, cancellationToken);
+
+        if (upload == null)
+        {
+            return NotFound(new { error = "Upload session not found" });
+        }
+
+        if (!await CanAccessUploadAsync(upload, cancellationToken))
+        {
+            await LogUploadEventAsync(uploadId, User.Identity?.Name ?? "unknown", upload.StoragePath, "Unauthorized", cancellationToken);
+            return Forbid();
+        }
+
+        if (upload.Status == UploadStatus.Completed)
+        {
+            var existingUrl = await _storageService.GenerateSignedUrlAsync(
+                upload.StoragePath,
+                TimeSpan.FromHours(1),
+                cancellationToken);
+            return Ok(upload.ToResponse(existingUrl));
+        }
+
+        var gcsMetadata = await _storageService.GetFileMetadataAsync(upload.StoragePath, cancellationToken);
+        if (gcsMetadata == null)
+        {
+            await LogUploadEventAsync(uploadId, upload.ServiceId, upload.StoragePath, "Failed", cancellationToken);
+            return BadRequest(new { error = "GCS object was not found. Upload the file to the session URI before completing the upload." });
+        }
+
+        if (gcsMetadata.SizeBytes != upload.FileSize)
+        {
+            await LogUploadEventAsync(uploadId, upload.ServiceId, upload.StoragePath, "Failed", cancellationToken);
+            return BadRequest(new
+            {
+                error = "GCS object size does not match the initiated upload size.",
+                expectedSize = upload.FileSize,
+                actualSize = gcsMetadata.SizeBytes
+            });
+        }
+
+        var checksum = request?.Checksum ?? upload.Checksum ?? ConvertGcsMd5ToHex(gcsMetadata.Md5Hash) ?? "UNKNOWN";
+
+        upload.Status = UploadStatus.Completed;
+        upload.BytesUploaded = gcsMetadata.SizeBytes;
+        upload.CompletedAt = DateTime.UtcNow;
+        upload.Checksum = checksum;
+
+        var fileMetadata = await _dbContext.FileMetadata
+            .FirstOrDefaultAsync(f => f.UploadId == uploadId, cancellationToken);
+
+        if (fileMetadata == null)
+        {
+            fileMetadata = new FileMetadata
+            {
+                FileId = Guid.NewGuid().ToString(),
+                UploadId = uploadId,
+                ServiceId = upload.ServiceId,
+                StoragePath = upload.StoragePath,
+                VersionETag = gcsMetadata.ETag,
+                FileSize = gcsMetadata.SizeBytes,
+                ContentType = gcsMetadata.ContentType,
+                Checksum = checksum,
+                UploadedAt = gcsMetadata.CreatedAt,
+                RetentionPolicyId = upload.RetentionPolicyId,
+                Metadata = upload.Metadata
+            };
+
+            if (string.IsNullOrEmpty(fileMetadata.RetentionPolicyId))
+            {
+                var applicablePolicy = await _lifecycleService.GetActiveRetentionPolicyAsync(
+                    upload.ServiceId,
+                    upload.StoragePath,
+                    cancellationToken);
+                fileMetadata.RetentionPolicyId = applicablePolicy?.PolicyId;
+            }
+
+            if (!string.IsNullOrEmpty(fileMetadata.RetentionPolicyId))
+            {
+                fileMetadata.ExpiresAt = await _lifecycleService.ApplyRetentionPolicyAsync(
+                    fileMetadata,
+                    fileMetadata.RetentionPolicyId,
+                    cancellationToken);
+            }
+
+            _dbContext.FileMetadata.Add(fileMetadata);
+        }
+
+        await LogUploadEventAsync(uploadId, upload.ServiceId, upload.StoragePath, "Success", cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        var downloadUrl = await _storageService.GenerateSignedUrlAsync(
+            upload.StoragePath,
+            TimeSpan.FromHours(1),
+            cancellationToken);
+
+        await PublishFileUploadedEventAsync(upload, fileMetadata, downloadUrl, cancellationToken);
+
+        _logger.LogInformation(
+            "Direct GCS upload completed. UploadId: {UploadId}, Service: {ServiceName}, Size: {SizeBytes}",
+            upload.UploadId,
+            upload.ServiceId,
+            upload.FileSize);
+
+        return Ok(upload.ToResponse(downloadUrl));
+    }
+
+    /// <summary>
+    /// Proxies a resumable upload chunk to GCS for clients that cannot reach GCS directly.
+    /// Prefer direct PUT to the session URI returned by <see cref="InitiateResumableUpload"/>.
     /// </summary>
     [HttpPut("resumable/{uploadId}")]
+    [RequirePermission(UploadPermissions.FilesUpload)]
     [ProducesResponseType(typeof(ResumeUploadResponse), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status308PermanentRedirect)] // Resume Incomplete
+    [ProducesResponseType(StatusCodes.Status308PermanentRedirect)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ResumeUpload(
@@ -401,11 +297,16 @@ public class UploadsController : ControllerBase
     {
         try
         {
-            // Find upload session
-            var upload = await _dbContext.Uploads.FindAsync(new object[] { uploadId }, cancellationToken);
+            var upload = await _dbContext.Uploads.FindAsync([uploadId], cancellationToken);
             if (upload == null)
             {
                 return NotFound(new { error = "Upload session not found" });
+            }
+
+            if (!await CanAccessUploadAsync(upload, cancellationToken))
+            {
+                await LogUploadEventAsync(uploadId, User.Identity?.Name ?? "unknown", upload.StoragePath, "Unauthorized", cancellationToken);
+                return Forbid();
             }
 
             if (string.IsNullOrEmpty(upload.SessionUri))
@@ -413,15 +314,13 @@ public class UploadsController : ControllerBase
                 return BadRequest(new { error = "Upload session is not resumable" });
             }
 
-            // Read request body as stream
             var contentRange = Request.Headers.ContentRange.ToString();
             if (string.IsNullOrEmpty(contentRange))
             {
                 return BadRequest(new { error = "Content-Range header is required" });
             }
 
-            // Parse Content-Range header: "bytes 0-1048575/10485760"
-            var rangeParts = contentRange.Replace("bytes ", "").Split('/');
+            var rangeParts = contentRange.Replace("bytes ", "", StringComparison.OrdinalIgnoreCase).Split('/');
             if (rangeParts.Length != 2)
             {
                 return BadRequest(new { error = "Invalid Content-Range header format" });
@@ -436,7 +335,6 @@ public class UploadsController : ControllerBase
                 return BadRequest(new { error = "Invalid Content-Range values" });
             }
 
-            // Resume upload with chunk
             var progress = await _storageService.ResumeUploadAsync(
                 upload.SessionUri,
                 Request.Body,
@@ -445,108 +343,11 @@ public class UploadsController : ControllerBase
                 totalSize,
                 cancellationToken);
 
-            // Update upload entity
             upload.BytesUploaded = progress.BytesReceived;
 
-            if (progress.IsComplete)
-            {
-                upload.Status = UploadStatus.Completed;
-                upload.CompletedAt = DateTime.UtcNow;
-
-                // Get actual ETag from storage if possible
-                var gcsMetadata = await _storageService.GetFileMetadataAsync(upload.StoragePath, cancellationToken);
-
-                // Convert Base64 MD5 from GCS to Hex string format matching SHA256 standard
-                string? gcsMd5Hex = null;
-                if (!string.IsNullOrEmpty(gcsMetadata?.Md5Hash))
-                {
-                    try
-                    {
-                        gcsMd5Hex = BitConverter.ToString(Convert.FromBase64String(gcsMetadata.Md5Hash))
-                                                .Replace("-", "").ToLowerInvariant();
-                    }
-                    catch
-                    {
-                        // Fallback to original if decode fails
-                    }
-                }
-
-                // Determine final checksum: Client provided -> GCS MD5 -> UNKNOWN
-                var finalChecksum = upload.Checksum ?? gcsMd5Hex ?? "UNKNOWN";
-
-                // Create FileMetadata entity
-                var fileMetadata = new FileMetadata
-                {
-                    FileId = Guid.NewGuid().ToString(),
-                    UploadId = uploadId,
-                    ServiceId = upload.ServiceId,
-                    StoragePath = upload.StoragePath,
-                    VersionETag = gcsMetadata?.ETag ?? Guid.NewGuid().ToString(),
-                    FileSize = upload.FileSize,
-                    ContentType = upload.ContentType,
-                    Checksum = finalChecksum,
-                    UploadedAt = DateTime.UtcNow
-                };
-
-                _dbContext.FileMetadata.Add(fileMetadata);
-
-                await _dbContext.SaveChangesAsync(cancellationToken);
-
-                _logger.LogInformation(
-                    "Resumable upload completed. UploadId: {UploadId}, TotalSize: {TotalSize}",
-                    uploadId, totalSize);
-
-                // Generate signed URL for downstream services
-                var downloadUrl = await _storageService.GenerateSignedUrlAsync(
-                    upload.StoragePath,
-                    TimeSpan.FromHours(1),
-                    cancellationToken);
-
-                // T158: Publish FileUploadedEvent (FR-025)
-                await _publishEndpoint.Publish(new FileUploadedEvent(
-                    MessageId: Guid.NewGuid(),
-                    MessageName: "FileUploadedEvent",
-                    MessageType: MessageType.Event,
-                    MessageVersion: "1.0.0",
-                    PublishedBy: "UploadService",
-                    ConsumedBy: ["GeometryService", "NotificationService"],
-                    CorrelationId: Guid.NewGuid(),
-                    CausationId: null,
-                    OccurredAtUtc: DateTimeOffset.UtcNow,
-                    IsPublic: false,
-                    Payload: new FileUploadedEventPayload(
-                        UploadId: uploadId,
-                        ServiceId: upload.ServiceId,
-                        FileName: upload.FileName,
-                        StoragePath: upload.StoragePath,
-                        ContentType: upload.ContentType,
-                        FileSize: (int)upload.FileSize,
-                        DownloadUrl: downloadUrl,
-                        UploadedAt: DateTimeOffset.UtcNow,
-                        RetentionPolicyId: fileMetadata.RetentionPolicyId,
-                        ExpiresAt: fileMetadata.ExpiresAt.HasValue ? new DateTimeOffset(fileMetadata.ExpiresAt.Value, TimeSpan.Zero) : null,
-                        Metadata: fileMetadata.Metadata!
-                    )
-                ), cancellationToken);
-
-                return Ok(new ResumeUploadResponse
-                {
-                    UploadId = uploadId,
-                    BytesReceived = progress.BytesReceived,
-                    TotalSize = progress.TotalSize,
-                    IsComplete = true,
-                    StoragePath = upload.StoragePath
-                });
-            }
-            else
+            if (!progress.IsComplete)
             {
                 await _dbContext.SaveChangesAsync(cancellationToken);
-
-                _logger.LogInformation(
-                    "Resumable upload progress. UploadId: {UploadId}, BytesReceived: {BytesReceived}/{TotalSize}",
-                    uploadId, progress.BytesReceived, progress.TotalSize);
-
-                // Return 308 Resume Incomplete
                 Response.StatusCode = 308;
                 return new JsonResult(new ResumeUploadResponse
                 {
@@ -557,55 +358,14 @@ public class UploadsController : ControllerBase
                     NextByteRange = $"{progress.BytesReceived}-{progress.TotalSize - 1}"
                 });
             }
+
+            return await CompleteResumableUpload(uploadId, null, cancellationToken);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to resume upload. UploadId: {UploadId}", uploadId);
             return StatusCode(500, new { error = "Failed to resume upload" });
         }
-    }
-
-    private async Task LogUploadEventAsync(
-        Guid uploadId,
-        string serviceName,
-        string path,
-        string eventTypeString,
-        CancellationToken cancellationToken)
-    {
-        // T113: Sanitize input strings for database (specifically handle null bytes for Postgres)
-        serviceName = serviceName?.Replace("\0", "[NULL]") ?? "unknown";
-        path = path?.Replace("\0", "[NULL]") ?? "";
-
-        var eventType = eventTypeString switch
-        {
-            "Success" => UploadEventType.UploadCompleted,
-            "Failed" => UploadEventType.UploadFailed,
-            "ValidationFailed" => UploadEventType.ValidationFailed,
-            "PathTraversalAttempt" or "Unauthorized" => UploadEventType.AuthorizationDenied,
-            _ => UploadEventType.UploadInitiated
-        };
-
-        var eventResult = eventTypeString switch
-        {
-            "Success" => EventResult.Success,
-            "Unauthorized" or "ValidationFailed" or "Failed" => EventResult.Failure,
-            _ => EventResult.Warning
-        };
-
-        var uploadEvent = new UploadEvent
-        {
-            EventId = Guid.NewGuid().ToString(),
-            UploadId = uploadId.ToString(),
-            EventType = eventType,
-            EventTimestamp = DateTime.UtcNow,
-            ServiceId = serviceName,
-            StoragePath = path,
-            EventResult = eventResult,
-            ErrorDetails = eventResult == EventResult.Failure ? $"Upload {eventTypeString}" : null
-        };
-
-        _dbContext.UploadEvents.Add(uploadEvent);
-        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>
@@ -627,7 +387,6 @@ public class UploadsController : ControllerBase
 
         try
         {
-            // Decode Base64 artifact data
             byte[] artifactBytes;
             try
             {
@@ -638,7 +397,6 @@ public class UploadsController : ControllerBase
                 return BadRequest(new { error = "Invalid Base64-encoded artifact data" });
             }
 
-            // Sanitize path
             string sanitizedPath;
             try
             {
@@ -646,12 +404,13 @@ public class UploadsController : ControllerBase
             }
             catch (ArgumentException ex)
             {
-                _logger.LogWarning("Path traversal attempt detected by service {ServiceName}: {OriginalPath}",
-                    serviceName, request.StoragePath);
+                _logger.LogWarning(
+                    "Path traversal attempt detected by service {ServiceName}: {OriginalPath}",
+                    serviceName,
+                    request.StoragePath);
                 return BadRequest(new { error = $"Invalid path: {ex.Message}" });
             }
 
-            // Upload to GCS using the storage service
             using var stream = new MemoryStream(artifactBytes);
             await _storageService.UploadFileAsync(
                 stream,
@@ -660,22 +419,17 @@ public class UploadsController : ControllerBase
                 overwrite: true,
                 cancellationToken);
 
-            // Generate signed download URL
             var downloadUrl = await _storageService.GenerateSignedUrlAsync(
                 sanitizedPath,
                 TimeSpan.FromHours(1),
                 cancellationToken);
 
-            // Log the event
-            await LogUploadEventAsync(
-                request.ArtifactId,
-                serviceName,
-                sanitizedPath,
-                "ArtifactUploaded",
-                cancellationToken);
+            await LogUploadEventAsync(request.ArtifactId.ToString(), serviceName, sanitizedPath, "ArtifactUploaded", cancellationToken);
 
-            _logger.LogInformation("Artifact uploaded successfully. ArtifactId: {ArtifactId}, Path: {Path}",
-                request.ArtifactId, sanitizedPath);
+            _logger.LogInformation(
+                "Artifact uploaded successfully. ArtifactId: {ArtifactId}, Path: {Path}",
+                request.ArtifactId,
+                sanitizedPath);
 
             return Ok(new ArtifactUploadResponse
             {
@@ -688,6 +442,140 @@ public class UploadsController : ControllerBase
         {
             _logger.LogError(ex, "Failed to upload artifact. ArtifactId: {ArtifactId}", request.ArtifactId);
             return StatusCode(500, new { error = "Failed to upload artifact" });
+        }
+    }
+
+    private static string ResolveUploadPath(string path, string serviceName, string uploadId)
+    {
+        var now = DateTime.UtcNow;
+        var placeholders = new Dictionary<string, string>
+        {
+            { "id", uploadId.Replace("-", "", StringComparison.Ordinal) },
+            { "timestamp", now.ToString("yyyyMMddHHmmss") },
+            { "date", now.ToString("yyyyMMdd") },
+            { "year", now.Year.ToString() },
+            { "month", now.Month.ToString("D2") },
+            { "day", now.Day.ToString("D2") },
+            { "service", serviceName }
+        };
+
+        return path.ResolvePlaceholders(placeholders).SanitizePath();
+    }
+
+    private async Task RemoveExistingUploadAsync(Upload existingUpload, CancellationToken cancellationToken)
+    {
+        var existingFileMetadata = await _dbContext.FileMetadata
+            .FirstOrDefaultAsync(f => f.UploadId == existingUpload.UploadId, cancellationToken);
+
+        if (existingFileMetadata != null)
+        {
+            _dbContext.FileMetadata.Remove(existingFileMetadata);
+        }
+
+        _dbContext.Uploads.Remove(existingUpload);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task PublishFileUploadedEventAsync(
+        Upload upload,
+        FileMetadata fileMetadata,
+        string downloadUrl,
+        CancellationToken cancellationToken)
+    {
+        await _publishEndpoint.Publish(new FileUploadedEvent(
+            MessageId: Guid.NewGuid(),
+            MessageName: "FileUploadedEvent",
+            MessageType: MessageType.Event,
+            MessageVersion: "1.0.0",
+            PublishedBy: "UploadService",
+            ConsumedBy: ["GeometryService", "NotificationService"],
+            CorrelationId: Guid.NewGuid(),
+            CausationId: null,
+            OccurredAtUtc: DateTimeOffset.UtcNow,
+            IsPublic: false,
+            Payload: new FileUploadedEventPayload(
+                UploadId: upload.UploadId,
+                ServiceId: upload.ServiceId,
+                FileName: upload.FileName,
+                StoragePath: upload.StoragePath,
+                ContentType: upload.ContentType,
+                FileSize: upload.FileSize,
+                DownloadUrl: downloadUrl,
+                UploadedAt: new DateTimeOffset(upload.UploadedAt, TimeSpan.Zero),
+                RetentionPolicyId: fileMetadata.RetentionPolicyId,
+                ExpiresAt: fileMetadata.ExpiresAt.HasValue ? new DateTimeOffset(fileMetadata.ExpiresAt.Value, TimeSpan.Zero) : null,
+                Metadata: fileMetadata.Metadata!
+            )
+        ), cancellationToken);
+    }
+
+    private async Task<bool> CanAccessUploadAsync(Upload upload, CancellationToken cancellationToken)
+    {
+        var serviceId = User.Identity?.Name ?? "unknown";
+        return await _authorizationService.CanAccessPathAsync(
+            serviceId,
+            upload.StoragePath,
+            cancellationToken);
+    }
+
+    private async Task LogUploadEventAsync(
+        string uploadId,
+        string serviceName,
+        string path,
+        string eventTypeString,
+        CancellationToken cancellationToken)
+    {
+        serviceName = serviceName?.Replace("\0", "[NULL]", StringComparison.Ordinal) ?? "unknown";
+        path = path?.Replace("\0", "[NULL]", StringComparison.Ordinal) ?? "";
+
+        var eventType = eventTypeString switch
+        {
+            "Success" => UploadEventType.UploadCompleted,
+            "Failed" => UploadEventType.UploadFailed,
+            "ValidationFailed" => UploadEventType.ValidationFailed,
+            "PathTraversalAttempt" or "Unauthorized" => UploadEventType.AuthorizationDenied,
+            _ => UploadEventType.UploadInitiated
+        };
+
+        var eventResult = eventTypeString switch
+        {
+            "Success" => EventResult.Success,
+            "Unauthorized" or "ValidationFailed" or "Failed" => EventResult.Failure,
+            _ => EventResult.Warning
+        };
+
+        var uploadEvent = new UploadEvent
+        {
+            EventId = Guid.NewGuid().ToString(),
+            UploadId = uploadId,
+            EventType = eventType,
+            EventTimestamp = DateTime.UtcNow,
+            ServiceId = serviceName,
+            StoragePath = path,
+            EventResult = eventResult,
+            ErrorDetails = eventResult == EventResult.Failure ? $"Upload {eventTypeString}" : null
+        };
+
+        _dbContext.UploadEvents.Add(uploadEvent);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string? ConvertGcsMd5ToHex(string? md5Hash)
+    {
+        if (string.IsNullOrEmpty(md5Hash))
+        {
+            return null;
+        }
+
+        try
+        {
+            return BitConverter.ToString(Convert.FromBase64String(md5Hash))
+                .Replace("-", "", StringComparison.Ordinal)
+                .ToLowerInvariant();
+        }
+        catch (FormatException)
+        {
+            return null;
         }
     }
 }

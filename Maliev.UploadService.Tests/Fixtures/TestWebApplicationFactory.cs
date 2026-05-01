@@ -4,7 +4,6 @@ using Maliev.UploadService.Domain.Entities;
 using Maliev.UploadService.Infrastructure.Persistence;
 using Maliev.UploadService.Tests.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using System.Diagnostics.CodeAnalysis;
 using Microsoft.EntityFrameworkCore;
 using Moq;
 
@@ -34,6 +33,7 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
         }
 
         // Register mock IStorageService that simulates successful uploads
+        var initiatedUploadSizes = new Dictionary<string, long>(StringComparer.Ordinal);
         var mockStorageService = new Mock<IStorageService>();
         mockStorageService
             .Setup(m => m.UploadFileAsync(
@@ -66,7 +66,15 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
 
         mockStorageService
             .Setup(m => m.GetFileMetadataAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((StorageFileMetadata?)null);
+            .ReturnsAsync((string path, CancellationToken ct) => new StorageFileMetadata
+            {
+                Name = path,
+                ContentType = "application/octet-stream",
+                SizeBytes = initiatedUploadSizes.TryGetValue(path, out var sizeBytes) ? sizeBytes : 100,
+                CreatedAt = DateTime.UtcNow,
+                ETag = "mock-etag",
+                Md5Hash = null
+            });
 
         mockStorageService
             .Setup(m => m.InitiateResumableUploadAsync(
@@ -75,12 +83,15 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
                 It.IsAny<long>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((string path, string contentType, long totalSize, CancellationToken ct) =>
-                new ResumableUploadSession
+            {
+                initiatedUploadSizes[path] = totalSize;
+                return new ResumableUploadSession
                 {
                     SessionUri = $"https://storage.googleapis.com/upload/mock/{Guid.NewGuid()}",
                     StoragePath = path,
                     ExpiresAt = DateTime.UtcNow.AddHours(24)
-                });
+                };
+            });
 
         mockStorageService
             .Setup(m => m.GenerateSignedUrlAsync(

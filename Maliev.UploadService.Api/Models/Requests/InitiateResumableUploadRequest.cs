@@ -15,6 +15,13 @@ public class InitiateResumableUploadRequest
     public required string Path { get; set; }
 
     /// <summary>
+    /// Gets or sets the original file name.
+    /// </summary>
+    [Required]
+    [MaxLength(255)]
+    public required string FileName { get; set; }
+
+    /// <summary>
     /// Gets or sets the name of the service performing the upload.
     /// </summary>
     [Required]
@@ -46,6 +53,11 @@ public class InitiateResumableUploadRequest
     /// </summary>
     [MaxLength(50)]
     public string? RetentionPolicyId { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether to overwrite an existing file at the same path.
+    /// </summary>
+    public bool Overwrite { get; set; }
 
     /// <summary>
     /// Gets or sets the optional client-provided checksum (MD5/SHA256).

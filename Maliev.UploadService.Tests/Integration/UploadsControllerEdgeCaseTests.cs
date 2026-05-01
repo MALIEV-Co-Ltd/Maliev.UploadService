@@ -61,6 +61,7 @@ public class UploadsControllerEdgeCaseTests : IAsyncLifetime
         var request = new
         {
             Path = "test-service/resumable/invalid-size.bin",
+            FileName = "upload.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
             TotalSize = 0
@@ -77,6 +78,7 @@ public class UploadsControllerEdgeCaseTests : IAsyncLifetime
         var request = new
         {
             Path = "test-service/resumable/negative-size.bin",
+            FileName = "upload.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
             TotalSize = -1
@@ -93,6 +95,7 @@ public class UploadsControllerEdgeCaseTests : IAsyncLifetime
         var request = new
         {
             Path = "",
+            FileName = "upload.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
             TotalSize = 1024
@@ -110,6 +113,7 @@ public class UploadsControllerEdgeCaseTests : IAsyncLifetime
         var request = new
         {
             Path = $"test-service/resumable/no-content-type-{uniqueId}.bin",
+            FileName = "upload.bin",
             ServiceName = "test-service",
             TotalSize = 1024
         };
@@ -126,6 +130,7 @@ public class UploadsControllerEdgeCaseTests : IAsyncLifetime
         var initiateRequest = new
         {
             Path = $"test-service/resumable/invalid-range-test-{uniqueId}.bin",
+            FileName = "upload.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
             TotalSize = 10 * 1024 * 1024
@@ -168,6 +173,7 @@ public class UploadsControllerEdgeCaseTests : IAsyncLifetime
         var initiateRequest = new
         {
             Path = $"test-service/resumable/out-of-order-test-{uniqueId}.bin",
+            FileName = "upload.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
             TotalSize = 10 * 1024 * 1024

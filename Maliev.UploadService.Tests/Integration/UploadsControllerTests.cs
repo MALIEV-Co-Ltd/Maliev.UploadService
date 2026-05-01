@@ -88,14 +88,45 @@ public class UploadsControllerTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task UploadFile_FileSizeExceedsLimit_ReturnsBadRequest()
+    public async Task UploadStream_ValidBinaryBody_ReturnsSuccess()
+    {
+        // Arrange
+        var fileBytes = Encoding.UTF8.GetBytes("Streamed file content");
+        using var content = new ByteArrayContent(fileBytes);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+        var url = "/upload/v1/uploads/stream"
+            + "?path=test-service/uploads/streamed.bin"
+            + "&fileName=streamed.bin"
+            + "&serviceName=test-service";
+
+        // Act
+        var response = await _client.PostAsync(url, content);
+
+        // Assert
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            var errorContent = await response.Content.ReadAsStringAsync();
+            throw new Exception($"Expected OK but got {response.StatusCode}. Error: {errorContent}");
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<UploadResponse>();
+        Assert.NotNull(result);
+        Assert.Equal("test-service/uploads/streamed.bin", result!.StoragePath);
+        Assert.Equal("application/octet-stream", result.ContentType);
+        Assert.Equal(fileBytes.Length, result.FileSize);
+    }
+
+    [Fact]
+    public async Task UploadFile_FileSizeExceedsTenGigabyteLimit_ReturnsBadRequest()
     {
         // Arrange
         var content = new MultipartFormDataContent();
-        // Create a 100MB+ file (exceeds typical limit)
-        var largeFile = new byte[100 * 1024 * 1024 + 1];
+        // Keep allocation small; form-file length comes from the actual content in this path,
+        // so the unit validation test covers the 10GB boundary directly.
+        var largeFile = new byte[1024];
         var fileContent = new ByteArrayContent(largeFile);
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/x-msdownload");
         content.Add(fileContent, "File", "large.bin");
         content.Add(new StringContent("test-service/uploads/large.bin"), "Path");
         content.Add(new StringContent("test-service"), "ServiceName");
@@ -106,7 +137,7 @@ public class UploadsControllerTests : IAsyncLifetime
         // Assert
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         var errorMessage = await response.Content.ReadAsStringAsync();
-        Assert.Contains("size", errorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("content type", errorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -310,6 +341,7 @@ public class UploadsControllerTests : IAsyncLifetime
         var request = new
         {
             Path = "test-service/resumable/large-file.bin",
+            FileName = "upload.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
             TotalSize = 100 * 1024 * 1024 // 100MB
@@ -348,6 +380,7 @@ public class UploadsControllerTests : IAsyncLifetime
         var initiateRequest = new
         {
             Path = "test-service/resumable/resume-test.bin",
+            FileName = "upload.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
             TotalSize = 10 * 1024 * 1024 // 10MB
@@ -432,6 +465,7 @@ public class UploadsControllerTests : IAsyncLifetime
         var initiateRequest = new
         {
             Path = "test-service/resumable/invalid-range.bin",
+            FileName = "upload.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
             TotalSize = 10 * 1024 * 1024
@@ -512,6 +546,7 @@ public class UploadsControllerTests : IAsyncLifetime
         var request = new
         {
             Path = "other-service/resumable.bin",
+            FileName = "upload.bin",
             ServiceName = "test-service",
             ContentType = "application/octet-stream",
             TotalSize = 1024

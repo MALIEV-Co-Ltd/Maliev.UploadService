@@ -5,7 +5,7 @@ namespace Maliev.UploadService.Api.Services;
 /// </summary>
 public class FileValidationService : IValidationService
 {
-    private readonly long _maxFileSizeBytes = 100 * 1024 * 1024; // 100MB default
+    private readonly long _maxFileSizeBytes = 10L * 1024 * 1024 * 1024; // 10GB default
     private readonly HashSet<string> _allowedContentTypes = new()
     {
         "text/plain",
