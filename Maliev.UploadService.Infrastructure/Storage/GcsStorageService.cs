@@ -201,7 +201,7 @@ public class GcsStorageService : IStorageService
             Bucket = bucketName
         };
 
-        var uploadUri = await InitiateGcsResumableUploadAsync(bucketName, objectMetadata, cancellationToken);
+        var uploadUri = await InitiateGcsResumableUploadAsync(bucketName, objectMetadata, totalSize, cancellationToken);
 
         return new ResumableUploadSession
         {
@@ -309,21 +309,33 @@ public class GcsStorageService : IStorageService
     private async Task<string> InitiateGcsResumableUploadAsync(
         string bucketName,
         Google.Apis.Storage.v1.Data.Object objectMetadata,
+        long totalSize,
         CancellationToken cancellationToken)
     {
         var httpClient = _httpClientFactory.CreateClient();
-        var uploadUrl = $"https://storage.googleapis.com/upload/storage/v1/b/{bucketName}/o?uploadType=resumable";
+        var objectName = Uri.EscapeDataString(objectMetadata.Name);
+        var uploadUrl = $"https://storage.googleapis.com/upload/storage/v1/b/{bucketName}/o?uploadType=resumable&name={objectName}";
 
         var request = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
         var tokenAccess = (Google.Apis.Auth.OAuth2.ITokenAccess)_credential;
         var accessToken = await tokenAccess.GetAccessTokenForRequestAsync(cancellationToken: cancellationToken);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
         request.Headers.Add("X-Upload-Content-Type", objectMetadata.ContentType);
-        var jsonContent = System.Text.Json.JsonSerializer.Serialize(objectMetadata);
+        request.Headers.Add("X-Upload-Content-Length", totalSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var jsonContent = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            contentType = objectMetadata.ContentType
+        });
         request.Content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "application/json");
 
         var response = await httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Failed to initiate GCS resumable upload for {bucketName}/{objectMetadata.Name}. " +
+                $"Status: {(int)response.StatusCode} {response.ReasonPhrase}. Error: {errorContent}");
+        }
 
         var sessionUri = response.Headers.Location?.ToString();
         if (string.IsNullOrEmpty(sessionUri))

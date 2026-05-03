@@ -24,6 +24,51 @@ public class GcsStorageServiceTests
     }
 
     [Fact]
+    public async Task InitiateResumableUploadAsync_ValidRequest_SendsGcsJsonApiInitiationRequest()
+    {
+        var mockClient = new Mock<StorageClient>();
+        var mockHttpMessageHandler = new MockHttpMessageHandler();
+        mockHttpMessageHandler.QueueResponse(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Headers =
+            {
+                Location = new Uri("https://storage.googleapis.com/upload/mock-session")
+            }
+        });
+
+        var httpClient = new HttpClient(mockHttpMessageHandler);
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        mockHttpClientFactory
+            .Setup(x => x.CreateClient(It.IsAny<string>()))
+            .Returns(httpClient);
+
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
+        var service = new GcsStorageService(mockClient.Object, CreateTestConfig(), mockHttpClientFactory.Object, dummyCredential);
+
+        var result = await service.InitiateResumableUploadAsync(
+            "test-service/uploads/file with spaces.step",
+            "model/step",
+            12345,
+            CancellationToken.None);
+
+        Assert.Equal("https://storage.googleapis.com/upload/mock-session", result.SessionUri);
+        var request = Assert.Single(mockHttpMessageHandler.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal(
+            "https://storage.googleapis.com/upload/storage/v1/b/test-bucket/o?uploadType=resumable&name=test-service%2Fuploads%2Ffile with spaces.step",
+            request.RequestUri!.ToString());
+        Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+        Assert.Equal("dummy-token", request.Headers.Authorization.Parameter);
+        Assert.True(request.Headers.TryGetValues("X-Upload-Content-Type", out var contentTypes));
+        Assert.Equal("model/step", Assert.Single(contentTypes));
+        Assert.True(request.Headers.TryGetValues("X-Upload-Content-Length", out var contentLengths));
+        Assert.Equal("12345", Assert.Single(contentLengths));
+
+        var body = await request.Content!.ReadAsStringAsync();
+        Assert.Equal("""{"contentType":"model/step"}""", body);
+    }
+
+    [Fact]
     public async Task UploadFileAsync_ValidStream_UploadsSuccessfully()
     {
         // Arrange

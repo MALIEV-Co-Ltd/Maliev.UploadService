@@ -150,13 +150,19 @@ try
             if (!string.IsNullOrEmpty(keyBase64))
             {
                 var keyJson = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(keyBase64));
-                return Google.Apis.Auth.OAuth2.CredentialFactory
+                var credential = Google.Apis.Auth.OAuth2.CredentialFactory
                     .FromJson<Google.Apis.Auth.OAuth2.ServiceAccountCredential>(keyJson)
                     .ToGoogleCredential();
+                return credential.IsCreateScopedRequired
+                    ? credential.CreateScoped(Google.Apis.Storage.v1.StorageService.Scope.DevstorageFullControl)
+                    : credential;
             }
 
             // Production: uses GKE Workload Identity via Application Default Credentials
-            return Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+            var applicationDefaultCredential = Google.Apis.Auth.OAuth2.GoogleCredential.GetApplicationDefault();
+            return applicationDefaultCredential.IsCreateScopedRequired
+                ? applicationDefaultCredential.CreateScoped(Google.Apis.Storage.v1.StorageService.Scope.DevstorageFullControl)
+                : applicationDefaultCredential;
         });
 
         builder.Services.AddSingleton(sp =>
