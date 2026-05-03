@@ -8,6 +8,7 @@ using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
 using Maliev.UploadService.Application.Interfaces;
+using Maliev.UploadService.Domain.Entities;
 using Maliev.UploadService.Infrastructure.Persistence;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
@@ -383,6 +384,216 @@ public class AdminController : ControllerBase
             return NotFound($"Source object not found: {sourcePath}");
         }
     }
+
+    /// <summary>
+    /// Copies a stored file to a new storage path and creates independent upload metadata for the copy.
+    /// </summary>
+    /// <param name="request">The copy request.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("copy-file-with-metadata")]
+    [RequirePermission(UploadPermissions.StorageManage, RequireLiveCheck = true)]
+    [ProducesResponseType(typeof(CopyFileWithMetadataResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> CopyFileWithMetadata(
+        [FromBody] CopyFileWithMetadataRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.SourcePath))
+            return BadRequest(new { error = "sourcePath is required." });
+
+        if (string.IsNullOrWhiteSpace(request.DestinationPath))
+            return BadRequest(new { error = "destinationPath is required." });
+
+        if (string.Equals(request.SourcePath, request.DestinationPath, StringComparison.Ordinal))
+            return BadRequest(new { error = "destinationPath must be different from sourcePath." });
+
+        if (string.IsNullOrWhiteSpace(request.FileName))
+            return BadRequest(new { error = "fileName is required." });
+
+        if (string.IsNullOrWhiteSpace(request.ServiceName))
+            return BadRequest(new { error = "serviceName is required." });
+
+        var sourceFile = await _dbContext.FileMetadata
+            .AsNoTracking()
+            .FirstOrDefaultAsync(f => f.StoragePath == request.SourcePath, cancellationToken);
+
+        if (sourceFile == null)
+            return NotFound(new { error = $"Source file metadata was not found for path '{request.SourcePath}'." });
+
+        var destinationExists = await _dbContext.FileMetadata
+            .AnyAsync(f => f.StoragePath == request.DestinationPath, cancellationToken)
+            || await _dbContext.Uploads
+                .AnyAsync(u => u.StoragePath == request.DestinationPath, cancellationToken);
+
+        if (destinationExists)
+            return Conflict(new { error = $"Destination path already has upload metadata: {request.DestinationPath}" });
+
+        var sourceUpload = await _dbContext.Uploads
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.UploadId == sourceFile.UploadId, cancellationToken);
+
+        Application.Interfaces.StorageUploadResult copyResult;
+        try
+        {
+            copyResult = await _storageService.CopyFileAsync(
+                request.SourcePath,
+                request.DestinationPath,
+                cancellationToken);
+        }
+        catch (Google.GoogleApiException ex) when (ex.HttpStatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogWarning("CopyFileWithMetadata: source object not found at {SourcePath}", request.SourcePath);
+            return NotFound(new { error = $"Source object was not found: {request.SourcePath}" });
+        }
+
+        var copiedUploadId = Guid.NewGuid().ToString();
+        var copiedFileId = Guid.NewGuid().ToString();
+        var copiedAt = copyResult.UploadedAt == default ? DateTime.UtcNow : copyResult.UploadedAt;
+        var sizeBytes = copyResult.SizeBytes > 0 ? copyResult.SizeBytes : sourceFile.FileSize;
+        var checksum = copyResult.Md5Hash ?? sourceFile.Checksum;
+        var mergedMetadata = MergeCopyMetadata(sourceFile, sourceUpload, request);
+
+        var copiedUpload = new Upload
+        {
+            UploadId = copiedUploadId,
+            ServiceId = request.ServiceName.Trim(),
+            UserId = User.Identity?.Name,
+            FileName = request.FileName.Trim(),
+            ContentType = sourceFile.ContentType,
+            FileSize = sizeBytes,
+            Checksum = checksum,
+            StoragePath = request.DestinationPath,
+            BytesUploaded = sizeBytes,
+            Status = UploadStatus.Completed,
+            UploadedAt = copiedAt,
+            CompletedAt = copiedAt,
+            RetentionPolicyId = sourceUpload?.RetentionPolicyId ?? sourceFile.RetentionPolicyId,
+            Metadata = mergedMetadata
+        };
+
+        var copiedFile = new FileMetadata
+        {
+            FileId = copiedFileId,
+            UploadId = copiedUploadId,
+            ServiceId = copiedUpload.ServiceId,
+            StoragePath = request.DestinationPath,
+            VersionETag = copyResult.ETag ?? sourceFile.VersionETag,
+            FileSize = sizeBytes,
+            ContentType = sourceFile.ContentType,
+            Checksum = checksum,
+            UploadedAt = copiedAt,
+            RetentionPolicyId = sourceFile.RetentionPolicyId,
+            StorageClass = sourceFile.StorageClass,
+            ExpiresAt = sourceFile.ExpiresAt,
+            Metadata = mergedMetadata
+        };
+
+        _dbContext.Uploads.Add(copiedUpload);
+        _dbContext.FileMetadata.Add(copiedFile);
+        _dbContext.UploadEvents.Add(new UploadEvent
+        {
+            EventId = Guid.NewGuid().ToString(),
+            EventType = UploadEventType.UploadCompleted,
+            EventResult = EventResult.Success,
+            ServiceId = copiedUpload.ServiceId,
+            UserId = copiedUpload.UserId,
+            UploadId = copiedUpload.UploadId,
+            FileId = copiedFile.FileId,
+            StoragePath = copiedFile.StoragePath,
+            EventTimestamp = copiedAt,
+            Metadata = new Dictionary<string, string>
+            {
+                ["operation"] = "copy-file-with-metadata",
+                ["source_file_id"] = sourceFile.FileId,
+                ["source_upload_id"] = sourceFile.UploadId,
+                ["source_storage_path"] = sourceFile.StoragePath
+            }
+        });
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Failed to persist copied upload metadata for {DestinationPath}. Deleting copied object.",
+                request.DestinationPath);
+
+            try
+            {
+                await _storageService.DeleteFileAsync(request.DestinationPath, cancellationToken);
+            }
+            catch (Exception cleanupEx)
+            {
+                _logger.LogWarning(
+                    cleanupEx,
+                    "Failed to delete copied object after metadata persistence failure at {DestinationPath}",
+                    request.DestinationPath);
+            }
+
+            throw;
+        }
+
+        _logger.LogInformation(
+            "Copied file metadata from {SourcePath} to {DestinationPath}. SourceFileId: {SourceFileId}, CopiedFileId: {CopiedFileId}",
+            request.SourcePath,
+            request.DestinationPath,
+            sourceFile.FileId,
+            copiedFile.FileId);
+
+        return Ok(new CopyFileWithMetadataResponse
+        {
+            FileId = copiedFile.FileId,
+            UploadId = copiedUpload.UploadId,
+            StoragePath = copiedFile.StoragePath,
+            FileName = copiedUpload.FileName,
+            SizeBytes = copiedFile.FileSize,
+            ContentType = copiedFile.ContentType,
+            UploadedAt = copiedFile.UploadedAt
+        });
+    }
+
+    private static Dictionary<string, string> MergeCopyMetadata(
+        FileMetadata sourceFile,
+        Upload? sourceUpload,
+        CopyFileWithMetadataRequest request)
+    {
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        if (sourceUpload?.Metadata != null)
+        {
+            foreach (var (key, value) in sourceUpload.Metadata)
+            {
+                metadata[key] = value;
+            }
+        }
+
+        if (sourceFile.Metadata != null)
+        {
+            foreach (var (key, value) in sourceFile.Metadata)
+            {
+                metadata[key] = value;
+            }
+        }
+
+        metadata["copy_source_file_id"] = sourceFile.FileId;
+        metadata["copy_source_upload_id"] = sourceFile.UploadId;
+        metadata["copy_source_storage_path"] = sourceFile.StoragePath;
+
+        if (request.Metadata != null)
+        {
+            foreach (var (key, value) in request.Metadata)
+            {
+                metadata[key] = value;
+            }
+        }
+
+        return metadata;
+    }
 }
 
 /// <summary>
@@ -430,4 +641,52 @@ public class MigratedFileEntry
 
     /// <summary>Gets or sets the new storage path after migration.</summary>
     public string NewPath { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Request body for copying a file and creating independent metadata for the copy.
+/// </summary>
+public class CopyFileWithMetadataRequest
+{
+    /// <summary>Gets or sets the source storage path.</summary>
+    public string SourcePath { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the destination storage path.</summary>
+    public string DestinationPath { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the file name to store on the copied upload row.</summary>
+    public string FileName { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the service that owns the copied file.</summary>
+    public string ServiceName { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets additional metadata to attach to the copied file.</summary>
+    public Dictionary<string, string>? Metadata { get; set; }
+}
+
+/// <summary>
+/// Response body for a copied file with newly created upload metadata.
+/// </summary>
+public class CopyFileWithMetadataResponse
+{
+    /// <summary>Gets or sets the copied file identifier.</summary>
+    public string FileId { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the copied upload identifier.</summary>
+    public string UploadId { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the copied storage path.</summary>
+    public string StoragePath { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the copied file name.</summary>
+    public string FileName { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the copied file size in bytes.</summary>
+    public long SizeBytes { get; set; }
+
+    /// <summary>Gets or sets the copied content type.</summary>
+    public string ContentType { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets when the copied object was created.</summary>
+    public DateTime UploadedAt { get; set; }
 }

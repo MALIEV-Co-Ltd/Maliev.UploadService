@@ -32,6 +32,13 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
             services.Remove(storageServiceDescriptor);
         }
 
+        var applicationStorageServiceDescriptor = services.FirstOrDefault(d =>
+            d.ServiceType == typeof(global::Maliev.UploadService.Application.Interfaces.IStorageService));
+        if (applicationStorageServiceDescriptor != null)
+        {
+            services.Remove(applicationStorageServiceDescriptor);
+        }
+
         // Register mock IStorageService that simulates successful uploads
         var initiatedUploadSizes = new Dictionary<string, long>(StringComparer.Ordinal);
         var mockStorageService = new Mock<IStorageService>();
@@ -122,6 +129,9 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
             });
 
         services.AddScoped(_ => mockStorageService.Object);
+        services.AddScoped<
+            global::Maliev.UploadService.Application.Interfaces.IStorageService,
+            global::Maliev.UploadService.Infrastructure.Storage.MockStorageService>();
 
         // Register default permissive IIamServiceClient mock
         // Tests that need restrictive IAM behavior should override via .WithWebHostBuilder()

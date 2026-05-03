@@ -8,9 +8,12 @@ using System.Text;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services.Auth;
+using Maliev.UploadService.Domain.Entities;
+using Maliev.UploadService.Infrastructure.Persistence;
 using Maliev.UploadService.Tests.Fixtures;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
 using Moq;
@@ -63,6 +66,13 @@ public class AdminControllerTests : IAsyncLifetime
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
+        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+            "admin-service",
+            UploadPermissions.StorageManage,
+            null,
+            It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
         // Mock IAM for Non-Admin token (explicit denial)
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "test-service",
@@ -71,30 +81,51 @@ public class AdminControllerTests : IAsyncLifetime
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
-        // Upload some test files for bulk delete
-        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _nonAdminToken);
-
-        // Also mock IAM for upload if needed by fallback
-        _iamClientMock.Setup(x => x.CheckPermissionAsync(
-            "test-service",
-            UploadPermissions.FilesUpload,
-            It.IsAny<string>(),
-            It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
-
-        for (int i = 0; i < 3; i++)
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
+        for (var i = 0; i < 3; i++)
         {
-            var content = new MultipartFormDataContent();
-            var fileContent = new ByteArrayContent(Encoding.UTF8.GetBytes($"Test file {i}"));
-            fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
-            content.Add(fileContent, "File", $"test-{i}.txt");
-            content.Add(new StringContent($"test-service/bulk-delete/test-{i}.txt"), "Path");
-            content.Add(new StringContent("test-service"), "ServiceName");
+            var uploadId = Guid.NewGuid().ToString();
+            var fileId = Guid.NewGuid().ToString();
+            var storagePath = $"test-service/bulk-delete/{Guid.NewGuid():N}-test-{i}.txt";
 
-            var uploadResponse = await _client.PostAsync("/upload/v1/uploads", content);
-            var uploadResult = await uploadResponse.Content.ReadFromJsonAsync<UploadResponse>();
-            _testUploadIds.Add(uploadResult!.UploadId);
+            dbContext.Uploads.Add(new Upload
+            {
+                UploadId = uploadId,
+                ServiceId = "test-service",
+                UserId = "test-user",
+                FileName = $"test-{i}.txt",
+                ContentType = "text/plain",
+                FileSize = Encoding.UTF8.GetByteCount($"Test file {i}"),
+                Checksum = $"checksum-{i}",
+                StoragePath = storagePath,
+                BytesUploaded = Encoding.UTF8.GetByteCount($"Test file {i}"),
+                Status = UploadStatus.Completed,
+                UploadedAt = DateTime.UtcNow.AddMinutes(-i),
+                CompletedAt = DateTime.UtcNow.AddMinutes(-i)
+            });
+
+            dbContext.FileMetadata.Add(new FileMetadata
+            {
+                FileId = fileId,
+                UploadId = uploadId,
+                ServiceId = "test-service",
+                StoragePath = storagePath,
+                VersionETag = $"etag-{i}",
+                FileSize = Encoding.UTF8.GetByteCount($"Test file {i}"),
+                ContentType = "text/plain",
+                Checksum = $"checksum-{i}",
+                UploadedAt = DateTime.UtcNow.AddMinutes(-i),
+                Metadata = new Dictionary<string, string>
+                {
+                    ["seeded_by"] = nameof(AdminControllerTests)
+                }
+            });
+
+            _testUploadIds.Add(uploadId);
         }
+
+        await dbContext.SaveChangesAsync();
     }
 
     public async Task DisposeAsync()
@@ -259,6 +290,66 @@ public class AdminControllerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CopyFileWithMetadata_CreatesIndependentFileMetadata_AndLeavesSourceUnchanged()
+    {
+        // Arrange
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _adminToken);
+
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
+        var sourceUploadId = _testUploadIds[0];
+        var sourceFile = await dbContext.FileMetadata
+            .SingleAsync(f => f.UploadId == sourceUploadId);
+        var sourceUpload = await dbContext.Uploads
+            .SingleAsync(u => u.UploadId == sourceUploadId);
+        var originalPath = sourceFile.StoragePath;
+        var originalFileId = sourceFile.FileId;
+        var originalUploadId = sourceFile.UploadId;
+        var destinationPath = $"test-service/reorder-copy/{Guid.NewGuid():N}.txt";
+
+        var request = new
+        {
+            sourcePath = originalPath,
+            destinationPath,
+            fileName = sourceUpload.FileName,
+            serviceName = sourceUpload.ServiceId,
+            metadata = new Dictionary<string, string>
+            {
+                ["reorder_source_file_id"] = originalFileId
+            }
+        };
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/upload/v1/admin/copy-file-with-metadata", request);
+
+        // Assert
+        var responseBody = await response.Content.ReadAsStringAsync();
+        Assert.True(response.StatusCode == HttpStatusCode.OK, responseBody);
+        var result = await response.Content.ReadFromJsonAsync<CopyFileWithMetadataResponseProbe>();
+        Assert.NotNull(result);
+        Assert.NotEqual(originalFileId, result.FileId);
+        Assert.NotEqual(originalUploadId, result.UploadId);
+        Assert.Equal(destinationPath, result.StoragePath);
+
+        dbContext.ChangeTracker.Clear();
+        var copiedFile = await dbContext.FileMetadata
+            .SingleAsync(f => f.FileId == result.FileId);
+        var copiedUpload = await dbContext.Uploads
+            .SingleAsync(u => u.UploadId == result.UploadId);
+        var unchangedSource = await dbContext.FileMetadata
+            .SingleAsync(f => f.FileId == originalFileId);
+
+        Assert.Equal(destinationPath, copiedFile.StoragePath);
+        Assert.Equal(destinationPath, copiedUpload.StoragePath);
+        Assert.Equal(sourceUpload.FileName, copiedUpload.FileName);
+        Assert.Equal(sourceUpload.ServiceId, copiedFile.ServiceId);
+        Assert.Equal(sourceFile.ContentType, copiedFile.ContentType);
+        Assert.NotNull(copiedFile.Metadata);
+        Assert.Equal(originalFileId, copiedFile.Metadata["reorder_source_file_id"]);
+        Assert.Equal(originalPath, unchangedSource.StoragePath);
+    }
+
+    [Fact]
     public async Task InitiateBulkDelete_WithoutAuthentication_ReturnsUnauthorized()
     {
         // Arrange
@@ -296,6 +387,7 @@ public class AdminControllerTests : IAsyncLifetime
         {
             claims.Add(new Claim("role", "Admin"));  // Use "role" claim name, not ClaimTypes.Role
             claims.Add(new Claim("permission", "upload.admin.manage-policies"));
+            claims.Add(new Claim("permission", "upload.storage.manage"));
             claims.Add(new Claim("permission", "upload.admin.bulk-delete"));
             claims.Add(new Claim("permission", "upload.admin.view-metrics"));
             claims.Add(new Claim("permission", "upload.retention.configure"));
@@ -311,5 +403,14 @@ public class AdminControllerTests : IAsyncLifetime
         );
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private sealed class CopyFileWithMetadataResponseProbe
+    {
+        public string FileId { get; set; } = string.Empty;
+
+        public string UploadId { get; set; } = string.Empty;
+
+        public string StoragePath { get; set; } = string.Empty;
     }
 }
