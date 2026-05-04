@@ -335,6 +335,36 @@ public class UploadsController : ControllerBase
                 return BadRequest(new { error = "Invalid Content-Range values" });
             }
 
+            if (totalSize != upload.FileSize)
+            {
+                return BadRequest(new
+                {
+                    error = $"Content-Range total size ({totalSize}) does not match initiated upload size ({upload.FileSize})"
+                });
+            }
+
+            if (startByte != upload.BytesUploaded)
+            {
+                return BadRequest(new
+                {
+                    error = $"Unexpected upload range start. Expected {upload.BytesUploaded}, received {startByte}"
+                });
+            }
+
+            if (endByte < startByte || endByte >= totalSize)
+            {
+                return BadRequest(new { error = "Content-Range byte range is outside the initiated upload size" });
+            }
+
+            var expectedContentLength = endByte - startByte + 1;
+            if (Request.ContentLength.HasValue && Request.ContentLength.Value != expectedContentLength)
+            {
+                return BadRequest(new
+                {
+                    error = $"Content-Length ({Request.ContentLength.Value}) does not match Content-Range length ({expectedContentLength})"
+                });
+            }
+
             var progress = await _storageService.ResumeUploadAsync(
                 upload.SessionUri,
                 Request.Body,

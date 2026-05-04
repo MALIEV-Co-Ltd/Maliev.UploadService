@@ -167,6 +167,44 @@ public class UploadsControllerEdgeCaseTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ResumeUpload_WithContentRangeTotalDifferentFromInitiatedSize_ReturnsBadRequest()
+    {
+        var uniqueId = Guid.NewGuid().ToString("N")[..8];
+        var initiatedSize = 783033;
+        var sentSize = 684;
+        var initiateRequest = new
+        {
+            Path = $"test-service/resumable/size-mismatch-{uniqueId}.step",
+            FileName = "New top socket 1 lower.step",
+            ServiceName = "test-service",
+            ContentType = "application/step",
+            TotalSize = initiatedSize
+        };
+
+        var initiateResponse = await _client.PostAsJsonAsync("/upload/v1/uploads/resumable", initiateRequest);
+        Assert.Equal(HttpStatusCode.OK, initiateResponse.StatusCode);
+
+        var initiateResult = await initiateResponse.Content.ReadFromJsonAsync<InitiateResumableUploadResponse>();
+        var uploadId = initiateResult!.UploadId;
+
+        var nonRedirectClient = _factory.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false
+        });
+        nonRedirectClient.DefaultRequestHeaders.Authorization = _client.DefaultRequestHeaders.Authorization;
+
+        var chunkContent = new ByteArrayContent(new byte[sentSize]);
+        chunkContent.Headers.ContentType = new MediaTypeHeaderValue("application/step");
+        chunkContent.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(0, sentSize - 1, sentSize);
+
+        var resumeResponse = await nonRedirectClient.PutAsync($"/upload/v1/uploads/resumable/{uploadId}", chunkContent);
+        var body = await resumeResponse.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.BadRequest, resumeResponse.StatusCode);
+        Assert.Contains("does not match initiated upload size", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ResumeUpload_WithOutOfOrderChunk_ReturnsBadRequest()
     {
         var uniqueId = Guid.NewGuid().ToString("N")[..8];
