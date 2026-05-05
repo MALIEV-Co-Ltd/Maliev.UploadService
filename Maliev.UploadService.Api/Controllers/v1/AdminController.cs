@@ -2,7 +2,6 @@ using System.Net;
 using System.Text.RegularExpressions;
 using Asp.Versioning;
 using Maliev.Aspire.ServiceDefaults.Authorization;
-using Maliev.UploadService.Api.Consumers;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Api.Services;
@@ -10,6 +9,8 @@ using Maliev.UploadService.Api.Services.Auth;
 using Maliev.UploadService.Application.Interfaces;
 using Maliev.UploadService.Domain.Entities;
 using Maliev.UploadService.Infrastructure.Persistence;
+using Maliev.MessagingContracts.Contracts.Shared;
+using Maliev.MessagingContracts.Contracts.Uploads;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -95,10 +96,20 @@ public class AdminController : ControllerBase
                 cancellationToken);
 
             // Publish message to queue for background processing
-            await _publishEndpoint.Publish(new BulkDeleteJobMessage
-            {
-                JobId = jobId
-            }, cancellationToken);
+            await _publishEndpoint.Publish(
+                new BulkDeleteJobCommand(
+                    MessageId: Guid.NewGuid(),
+                    MessageName: nameof(BulkDeleteJobCommand),
+                    MessageType: MessageType.Command,
+                    MessageVersion: "1.0",
+                    PublishedBy: "UploadService",
+                    ConsumedBy: ["UploadService"],
+                    CorrelationId: Guid.NewGuid(),
+                    CausationId: null,
+                    OccurredAtUtc: DateTimeOffset.UtcNow,
+                    IsPublic: false,
+                    Payload: new BulkDeleteJobCommandPayload(jobId)),
+                cancellationToken);
 
             return Accepted(new BulkDeleteJobResponse
             {

@@ -1,4 +1,5 @@
 using Maliev.UploadService.Application.Interfaces;
+using Maliev.MessagingContracts.Contracts.Uploads;
 using MassTransit;
 
 namespace Maliev.UploadService.Api.Consumers;
@@ -6,7 +7,7 @@ namespace Maliev.UploadService.Api.Consumers;
 /// <summary>
 /// MassTransit consumer for processing bulk delete jobs (FR-033)
 /// </summary>
-public class BulkDeleteJobConsumer : IConsumer<BulkDeleteJobMessage>
+public class BulkDeleteJobConsumer : IConsumer<BulkDeleteJobCommand>
 {
     private readonly IBulkDeleteService _bulkDeleteService;
     private readonly ILogger<BulkDeleteJobConsumer> _logger;
@@ -29,9 +30,9 @@ public class BulkDeleteJobConsumer : IConsumer<BulkDeleteJobMessage>
     /// </summary>
     /// <param name="context">The consume context containing the message.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task Consume(ConsumeContext<BulkDeleteJobMessage> context)
+    public async Task Consume(ConsumeContext<BulkDeleteJobCommand> context)
     {
-        var jobId = context.Message.JobId;
+        var jobId = context.Message.Payload.JobId;
 
         _logger.LogInformation("Processing bulk delete job. JobId: {JobId}", jobId);
 
@@ -46,15 +47,4 @@ public class BulkDeleteJobConsumer : IConsumer<BulkDeleteJobMessage>
             throw; // Re-throw to trigger MassTransit retry logic
         }
     }
-}
-
-/// <summary>
-/// Message class for bulk delete job processing.
-/// </summary>
-public class BulkDeleteJobMessage
-{
-    /// <summary>
-    /// Gets or sets the unique identifier for the bulk delete job.
-    /// </summary>
-    public required string JobId { get; set; }
 }

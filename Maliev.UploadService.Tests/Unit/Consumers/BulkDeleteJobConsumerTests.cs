@@ -1,5 +1,7 @@
 using Maliev.UploadService.Api.Consumers;
 using Maliev.UploadService.Application.Interfaces;
+using Maliev.MessagingContracts.Contracts.Shared;
+using Maliev.MessagingContracts.Contracts.Uploads;
 using MassTransit;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -24,8 +26,8 @@ public class BulkDeleteJobConsumerTests
     public async Task Consume_WithValidJobId_ProcessesSuccessfully()
     {
         var jobId = Guid.NewGuid().ToString();
-        var message = new BulkDeleteJobMessage { JobId = jobId };
-        var contextMock = new Mock<ConsumeContext<BulkDeleteJobMessage>>();
+        var message = CreateCommand(jobId);
+        var contextMock = new Mock<ConsumeContext<BulkDeleteJobCommand>>();
         contextMock.Setup(c => c.Message).Returns(message);
         contextMock.Setup(c => c.CancellationToken).Returns(CancellationToken.None);
 
@@ -44,8 +46,8 @@ public class BulkDeleteJobConsumerTests
     public async Task Consume_WhenServiceThrows_ReThrowsException()
     {
         var jobId = Guid.NewGuid().ToString();
-        var message = new BulkDeleteJobMessage { JobId = jobId };
-        var contextMock = new Mock<ConsumeContext<BulkDeleteJobMessage>>();
+        var message = CreateCommand(jobId);
+        var contextMock = new Mock<ConsumeContext<BulkDeleteJobCommand>>();
         contextMock.Setup(c => c.Message).Returns(message);
         contextMock.Setup(c => c.CancellationToken).Returns(CancellationToken.None);
 
@@ -61,8 +63,8 @@ public class BulkDeleteJobConsumerTests
     public async Task Consume_WithEmptyJobId_StillProcesses()
     {
         var jobId = "";
-        var message = new BulkDeleteJobMessage { JobId = jobId };
-        var contextMock = new Mock<ConsumeContext<BulkDeleteJobMessage>>();
+        var message = CreateCommand(jobId);
+        var contextMock = new Mock<ConsumeContext<BulkDeleteJobCommand>>();
         contextMock.Setup(c => c.Message).Returns(message);
         contextMock.Setup(c => c.CancellationToken).Returns(CancellationToken.None);
 
@@ -75,5 +77,21 @@ public class BulkDeleteJobConsumerTests
         _bulkDeleteServiceMock.Verify(
             s => s.ProcessBulkDeleteJobAsync(jobId, CancellationToken.None),
             Times.Once);
+    }
+
+    private static BulkDeleteJobCommand CreateCommand(string jobId)
+    {
+        return new BulkDeleteJobCommand(
+            MessageId: Guid.NewGuid(),
+            MessageName: nameof(BulkDeleteJobCommand),
+            MessageType: MessageType.Command,
+            MessageVersion: "1.0",
+            PublishedBy: "UploadService",
+            ConsumedBy: ["UploadService"],
+            CorrelationId: Guid.NewGuid(),
+            CausationId: null,
+            OccurredAtUtc: DateTimeOffset.UtcNow,
+            IsPublic: false,
+            Payload: new BulkDeleteJobCommandPayload(jobId));
     }
 }
