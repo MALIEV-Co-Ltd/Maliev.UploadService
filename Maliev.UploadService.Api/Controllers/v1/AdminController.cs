@@ -238,7 +238,7 @@ public class AdminController : ControllerBase
 
         if (!dryRun && migrated.Count > 0)
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await PersistMigratedFileUpdatesAsync(migrated, cancellationToken);
             _logger.LogInformation("Persisted {Count} path updates to database", migrated.Count);
         }
 
@@ -334,7 +334,7 @@ public class AdminController : ControllerBase
 
         if (!dryRun && migrated.Count > 0)
         {
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await PersistMigratedFileUpdatesAsync(migrated, cancellationToken);
             _logger.LogInformation("Persisted {Count} path updates to database for project {ProjectId}", migrated.Count, projectId);
         }
 
@@ -593,6 +593,60 @@ public class AdminController : ControllerBase
         }
 
         return metadata;
+    }
+
+    private async Task PersistMigratedFileUpdatesAsync(
+        IReadOnlyCollection<MigratedFileEntry> migrated,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Concurrent project file migration detected while persisting {Count} path updates; verifying idempotent result",
+                migrated.Count);
+        }
+
+        _dbContext.ChangeTracker.Clear();
+
+        var expectedPaths = migrated.ToDictionary(
+            entry => entry.FileId,
+            entry => entry.NewPath,
+            StringComparer.Ordinal);
+
+        var fileIds = expectedPaths.Keys.ToList();
+        var persistedFiles = await _dbContext.FileMetadata
+            .AsNoTracking()
+            .Where(file => fileIds.Contains(file.FileId))
+            .Select(file => new { file.FileId, file.StoragePath })
+            .ToListAsync(cancellationToken);
+
+        var persistedByFileId = persistedFiles.ToDictionary(
+            file => file.FileId,
+            file => file.StoragePath,
+            StringComparer.Ordinal);
+
+        var unresolved = expectedPaths
+            .Where(expected =>
+                !persistedByFileId.TryGetValue(expected.Key, out var persistedPath) ||
+                !string.Equals(persistedPath, expected.Value, StringComparison.Ordinal))
+            .Select(expected => expected.Key)
+            .ToList();
+
+        if (unresolved.Count > 0)
+        {
+            throw new DbUpdateConcurrencyException(
+                $"Concurrent migration did not persist expected storage paths for {unresolved.Count} file(s): {string.Join(", ", unresolved)}");
+        }
+
+        _logger.LogInformation(
+            "Concurrent migration already persisted {Count} path updates; treating migration as idempotent",
+            migrated.Count);
     }
 }
 

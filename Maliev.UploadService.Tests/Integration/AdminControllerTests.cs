@@ -350,6 +350,82 @@ public class AdminControllerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task MigrateProject_WhenCalledConcurrently_IsIdempotent()
+    {
+        var projectId = Guid.NewGuid();
+        var customerId = Guid.NewGuid();
+        var seededFileIds = new List<string>();
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<UploadDbContext>();
+            for (var i = 0; i < 2; i++)
+            {
+                var uploadId = Guid.NewGuid().ToString();
+                var fileId = Guid.NewGuid().ToString();
+                var storagePath = $"projects/{projectId}/{Guid.NewGuid():N}-part-{i}.step";
+
+                dbContext.Uploads.Add(new Upload
+                {
+                    UploadId = uploadId,
+                    ServiceId = "Intranet",
+                    UserId = "test-user",
+                    FileName = $"part-{i}.step",
+                    ContentType = "model/step",
+                    FileSize = 1024,
+                    Checksum = $"checksum-project-migration-{i}",
+                    StoragePath = storagePath,
+                    BytesUploaded = 1024,
+                    Status = UploadStatus.Completed,
+                    UploadedAt = DateTime.UtcNow,
+                    CompletedAt = DateTime.UtcNow
+                });
+
+                dbContext.FileMetadata.Add(new FileMetadata
+                {
+                    FileId = fileId,
+                    UploadId = uploadId,
+                    ServiceId = "Intranet",
+                    StoragePath = storagePath,
+                    VersionETag = $"etag-project-migration-{i}",
+                    FileSize = 1024,
+                    ContentType = "model/step",
+                    Checksum = $"checksum-project-migration-{i}",
+                    UploadedAt = DateTime.UtcNow
+                });
+
+                seededFileIds.Add(fileId);
+            }
+
+            await dbContext.SaveChangesAsync();
+        }
+
+        _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _adminToken);
+        var url = $"/upload/v1/admin/migrate-project/{projectId}?customerId={customerId}";
+
+        var responses = await Task.WhenAll(
+            _client.PostAsync(url, null),
+            _client.PostAsync(url, null));
+
+        foreach (var response in responses)
+        {
+            var responseBody = await response.Content.ReadAsStringAsync();
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.DoesNotContain("DbUpdateConcurrencyException", responseBody, StringComparison.Ordinal);
+        }
+
+        await using var verifyScope = _factory.Services.CreateAsyncScope();
+        var verifyDbContext = verifyScope.ServiceProvider.GetRequiredService<UploadDbContext>();
+        var paths = await verifyDbContext.FileMetadata
+            .Where(file => seededFileIds.Contains(file.FileId))
+            .Select(file => file.StoragePath)
+            .ToListAsync();
+
+        Assert.Equal(seededFileIds.Count, paths.Count);
+        Assert.All(paths, path => Assert.StartsWith($"customers/{customerId}/projects/{projectId}/", path));
+    }
+
+    [Fact]
     public async Task InitiateBulkDelete_WithoutAuthentication_ReturnsUnauthorized()
     {
         // Arrange
