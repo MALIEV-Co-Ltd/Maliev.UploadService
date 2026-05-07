@@ -25,6 +25,8 @@ public class FileValidationService : IValidationService
         "model/stl",
         "model/obj",
         "model/3mf",
+        "model/gltf-binary",
+        "model/gltf+json",
         "application/step",
         "application/iges",
         "image/vnd.dwg"

@@ -21,6 +21,23 @@ public class FileValidationServiceTests
         Assert.Empty(result.Errors);
     }
 
+    [Theory]
+    [InlineData("hero-3d-compressed.glb", "model/gltf-binary")]
+    [InlineData("scene.gltf", "model/gltf+json")]
+    public async Task ValidateFileAsync_GltfModelContentType_ReturnsSuccess(string fileName, string contentType)
+    {
+        // Arrange
+        var service = new FileValidationService();
+        using var stream = new MemoryStream(new byte[] { 0x67, 0x6C, 0x54, 0x46 });
+
+        // Act
+        var result = await service.ValidateFileAsync(stream, fileName, contentType, stream.Length);
+
+        // Assert
+        Assert.True(result.IsValid);
+        Assert.Empty(result.Errors);
+    }
+
     [Fact]
     public async Task ValidateFileAsync_ExecutableFile_ReturnsError()
     {
