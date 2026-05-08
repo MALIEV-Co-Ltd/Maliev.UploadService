@@ -45,6 +45,11 @@ public class GcsStorageService : IStorageService
     /// </summary>
     private string GetBucketForPath(string storagePath)
     {
+        // Service caches (e.g. GeometryService tessellation/DFM result cache).
+        // Routed to a dedicated bucket with a short TTL lifecycle policy.
+        if (storagePath.StartsWith("cache/", StringComparison.OrdinalIgnoreCase))
+            return _buckets.GetValueOrDefault("cache", "maliev-cache");
+
         if (storagePath.StartsWith("customer-", StringComparison.OrdinalIgnoreCase) ||
             storagePath.StartsWith("customers/", StringComparison.OrdinalIgnoreCase) ||
             storagePath.Contains("/customers/", StringComparison.OrdinalIgnoreCase) ||

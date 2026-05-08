@@ -18,7 +18,26 @@ public class GcsStorageServiceTests
                 ["GoogleCloud:Buckets:Customers"] = defaultBucket,
                 ["GoogleCloud:Buckets:Financials"] = defaultBucket,
                 ["GoogleCloud:Buckets:Operations"] = defaultBucket,
-                ["GoogleCloud:Buckets:Temp"] = defaultBucket
+                ["GoogleCloud:Buckets:Temp"] = defaultBucket,
+                ["GoogleCloud:Buckets:Cache"] = defaultBucket
+            })
+            .Build();
+    }
+
+    /// <summary>
+    /// Variant config that gives every bucket category a distinct name so
+    /// routing assertions can prove which bucket was selected.
+    /// </summary>
+    private static IConfiguration CreateRoutingConfig()
+    {
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GoogleCloud:Buckets:Customers"] = "bucket-customers",
+                ["GoogleCloud:Buckets:Financials"] = "bucket-financials",
+                ["GoogleCloud:Buckets:Operations"] = "bucket-operations",
+                ["GoogleCloud:Buckets:Temp"] = "bucket-temp",
+                ["GoogleCloud:Buckets:Cache"] = "bucket-cache"
             })
             .Build();
     }
@@ -573,5 +592,81 @@ public class GcsStorageServiceTests
 
         // Assert
         Assert.Null(metadata);
+    }
+
+    // ---------------------------------------------------------------------
+    // Bucket-routing rule tests.  GetBucketForPath is private, so we exercise
+    // it indirectly by calling FileExistsAsync with various paths and asserting
+    // which bucket name was passed to GetObjectAsync.
+    // ---------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("cache/tessellation/abc/t002.json", "bucket-cache")]
+    [InlineData("cache/dfm-results/abc/FDM_b1s0.json", "bucket-cache")]
+    [InlineData("CACHE/foo.json", "bucket-cache")] // case-insensitive prefix
+    [InlineData("customers/123/file.pdf", "bucket-customers")]
+    [InlineData("CompanyA/orders/456/material.step", "bucket-operations")] // requires /orders/ substring
+    [InlineData("CompanyA/invoices/789/inv.pdf", "bucket-financials")] // requires /invoices/ substring
+    [InlineData("uploads/temp.bin", "bucket-temp")] // unmatched -> default
+    public async Task FileExistsAsync_RoutesPathToCorrectBucket(string storagePath, string expectedBucket)
+    {
+        // Arrange
+        var mockClient = new Mock<StorageClient>();
+        string? capturedBucket = null;
+        mockClient
+            .Setup(x => x.GetObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<GetObjectOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, GetObjectOptions, CancellationToken>(
+                (bucket, _, _, _) => capturedBucket = bucket)
+            .ReturnsAsync(new Google.Apis.Storage.v1.Data.Object { Name = storagePath });
+
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
+        var service = new GcsStorageService(mockClient.Object, CreateRoutingConfig(), mockHttpClientFactory.Object, dummyCredential);
+
+        // Act
+        var exists = await service.FileExistsAsync(storagePath);
+
+        // Assert
+        Assert.True(exists);
+        Assert.Equal(expectedBucket, capturedBucket);
+    }
+
+    [Fact]
+    public async Task FileExistsAsync_CacheBucket_FallsBackToDefaultName_WhenConfigMissing()
+    {
+        // Arrange — config WITHOUT a Cache key.  Routing should fall back to
+        // the hard-coded default ("maliev-cache") rather than the temp bucket.
+        var mockClient = new Mock<StorageClient>();
+        string? capturedBucket = null;
+        mockClient
+            .Setup(x => x.GetObjectAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<GetObjectOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Callback<string, string, GetObjectOptions, CancellationToken>(
+                (bucket, _, _, _) => capturedBucket = bucket)
+            .ThrowsAsync(new Google.GoogleApiException("GCS", "Not Found"));
+
+        var configMissingCache = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["GoogleCloud:Buckets:Temp"] = "bucket-temp"
+            })
+            .Build();
+
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        var dummyCredential = Google.Apis.Auth.OAuth2.GoogleCredential.FromAccessToken("dummy-token");
+        var service = new GcsStorageService(mockClient.Object, configMissingCache, mockHttpClientFactory.Object, dummyCredential);
+
+        // Act
+        await service.FileExistsAsync("cache/tessellation/abc/t002.json");
+
+        // Assert
+        Assert.Equal("maliev-cache", capturedBucket);
     }
 }
