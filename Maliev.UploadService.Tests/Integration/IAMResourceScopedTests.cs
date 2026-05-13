@@ -60,15 +60,17 @@ public class IAMResourceScopedTests : IAsyncLifetime
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        var content = new MultipartFormDataContent();
-        content.Add(new StringContent(serviceName), "ServiceName");
-        content.Add(new StringContent(requestedPath), "Path");
-        var fileContent = new ByteArrayContent(new byte[] { 1, 2, 3 });
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
-        content.Add(fileContent, "File", "inv1.pdf");
+        var request = new
+        {
+            Path = requestedPath,
+            FileName = "inv1.pdf",
+            ServiceName = serviceName,
+            ContentType = "application/pdf",
+            TotalSize = 3
+        };
 
         // Act
-        var response = await client.PostAsync("/upload/v1/uploads", content);
+        var response = await client.PostAsJsonAsync("/upload/v1/uploads/resumable", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -94,17 +96,17 @@ public class IAMResourceScopedTests : IAsyncLifetime
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
-        // Also ensure legacy doesn't allow it (mocking empty DB/policies)
-
-        var content = new MultipartFormDataContent();
-        content.Add(new StringContent(serviceName), "ServiceName");
-        content.Add(new StringContent(requestedPath), "Path");
-        var fileContent = new ByteArrayContent(new byte[] { 1, 2, 3 });
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
-        content.Add(fileContent, "File", "ord1.pdf");
+        var request = new
+        {
+            Path = requestedPath,
+            FileName = "ord1.pdf",
+            ServiceName = serviceName,
+            ContentType = "application/pdf",
+            TotalSize = 3
+        };
 
         // Act
-        var response = await client.PostAsync("/upload/v1/uploads", content);
+        var response = await client.PostAsJsonAsync("/upload/v1/uploads/resumable", request);
 
         // Assert
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);

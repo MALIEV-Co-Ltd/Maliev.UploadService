@@ -68,11 +68,23 @@ public class UploadsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var uploadId = Guid.NewGuid().ToString();
-        var serviceName = request.ServiceName ?? User.Identity?.Name ?? "unknown";
+        var callerServiceId = GetCallerServiceId();
+        var serviceName = request.ServiceName.Trim();
 
         try
         {
             var sanitizedPath = ResolveUploadPath(request.Path, serviceName, uploadId);
+
+            if (!await _authorizationService.CanUploadToPathAsync(serviceName, sanitizedPath, cancellationToken))
+            {
+                _logger.LogWarning(
+                    "Unauthorized resumable upload initiation by caller {CallerServiceId} as service {ServiceName} for path {StoragePath}",
+                    callerServiceId,
+                    serviceName,
+                    sanitizedPath);
+                await LogUploadEventAsync(uploadId, callerServiceId, sanitizedPath, "Unauthorized", cancellationToken);
+                return Forbid();
+            }
 
             var validationResult = await _validationService.ValidateFileAsync(
                 Stream.Null,
@@ -413,7 +425,7 @@ public class UploadsController : ControllerBase
         [FromBody] UploadArtifactRequest request,
         CancellationToken cancellationToken)
     {
-        var serviceName = User.Identity?.Name ?? "GeometryService";
+        var serviceName = GetCallerServiceId();
 
         try
         {
@@ -439,6 +451,16 @@ public class UploadsController : ControllerBase
                     serviceName,
                     request.StoragePath);
                 return BadRequest(new { error = $"Invalid path: {ex.Message}" });
+            }
+
+            if (!await _authorizationService.CanUploadToPathAsync(serviceName, sanitizedPath, cancellationToken))
+            {
+                _logger.LogWarning(
+                    "Unauthorized artifact upload by service {ServiceName} for path {StoragePath}",
+                    serviceName,
+                    sanitizedPath);
+                await LogUploadEventAsync(request.ArtifactId.ToString(), serviceName, sanitizedPath, "Unauthorized", cancellationToken);
+                return Forbid();
             }
 
             using var stream = new MemoryStream(artifactBytes);
@@ -541,11 +563,18 @@ public class UploadsController : ControllerBase
 
     private async Task<bool> CanAccessUploadAsync(Upload upload, CancellationToken cancellationToken)
     {
-        var serviceId = User.Identity?.Name ?? "unknown";
+        var serviceId = GetCallerServiceId();
         return await _authorizationService.CanAccessPathAsync(
             serviceId,
             upload.StoragePath,
             cancellationToken);
+    }
+
+    private string GetCallerServiceId()
+    {
+        return User.FindFirst("service_name")?.Value
+            ?? User.Identity?.Name
+            ?? "unknown";
     }
 
     private async Task LogUploadEventAsync(

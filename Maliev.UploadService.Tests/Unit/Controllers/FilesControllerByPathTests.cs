@@ -24,6 +24,7 @@ public class FilesControllerByPathTests
 {
     private static FilesController MakeController(
         bool fileExists,
+        bool canAccess = true,
         string? cachedUrl = null,
         string signedUrl = "https://storage.googleapis.com/signed?sig=mock")
     {
@@ -38,7 +39,7 @@ public class FilesControllerByPathTests
         var authMock = new Mock<IAuthorizationPolicyService>();
         authMock
             .Setup(a => a.CanAccessPathAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .ReturnsAsync(canAccess);
 
         var cacheOptions = Options.Create(new MemoryDistributedCacheOptions());
         IDistributedCache cache;
@@ -106,7 +107,18 @@ public class FilesControllerByPathTests
     }
 
     [Fact]
-    public async Task GenerateSignedUrlByPath_ReturnsCached_WithoutExistenceCheck_WhenCacheHit()
+    public async Task GenerateSignedUrlByPath_Returns403_WhenPathUnauthorized()
+    {
+        var controller = MakeController(fileExists: true, canAccess: false);
+        var request = new GenerateSignedUrlByPathRequest { StoragePath = "some/path.stl", ExpirationMinutes = 60 };
+
+        var result = await controller.GenerateSignedUrlByPath(request, CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(result);
+    }
+
+    [Fact]
+    public async Task GenerateSignedUrlByPath_ReturnsCached_AfterAuthorization_WithoutExistenceCheck_WhenCacheHit()
     {
         var storageMock = new Mock<IStorageService>(MockBehavior.Strict);
         // FileExistsAsync should NOT be called when cache is warm
@@ -150,7 +162,10 @@ public class FilesControllerByPathTests
 
         var okResult = Assert.IsType<OkObjectResult>(result);
         Assert.Equal(200, okResult.StatusCode);
-        // Should NOT have called FileExistsAsync — cache hit bypasses the check
+        authMock.Verify(
+            a => a.CanAccessPathAsync("test-service", "some/path.stl", It.IsAny<CancellationToken>()),
+            Times.Once);
+        // Should NOT have called FileExistsAsync because cache hit happens after authorization
         storageMock.Verify(
             s => s.FileExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);

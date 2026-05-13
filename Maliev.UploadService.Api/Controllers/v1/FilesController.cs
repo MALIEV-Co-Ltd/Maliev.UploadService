@@ -305,6 +305,7 @@ public class FilesController : ControllerBase
     [RequirePermission(UploadPermissions.FilesDownload, RequireLiveCheck = false)]
     [ProducesResponseType(typeof(SignedUrlResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GenerateSignedUrlByPath(
         [FromBody] GenerateSignedUrlByPathRequest request,
         CancellationToken cancellationToken)
@@ -317,6 +318,20 @@ public class FilesController : ControllerBase
             }
 
             var serviceId = User.Identity?.Name ?? "unknown";
+
+            var canAccess = await _authorizationService.CanAccessPathAsync(
+                serviceId,
+                request.StoragePath,
+                cancellationToken);
+
+            if (!canAccess)
+            {
+                _logger.LogWarning(
+                    "Unauthorized signed URL by-path request by service {ServiceId} for path {StoragePath}",
+                    serviceId,
+                    request.StoragePath);
+                return Forbid();
+            }
 
             // Check cache for existing signed URL
             var cacheKey = $"signed-url:path:{request.StoragePath}:{request.ExpirationMinutes}";
