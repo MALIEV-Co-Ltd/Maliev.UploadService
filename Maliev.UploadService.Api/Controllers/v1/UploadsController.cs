@@ -54,6 +54,115 @@ public class UploadsController : ControllerBase
     }
 
     /// <summary>
+    /// Uploads a multipart form file through the service.
+    /// </summary>
+    [HttpPost]
+    [Consumes("multipart/form-data")]
+    [RequirePermission(UploadPermissions.FilesUpload)]
+    [ProducesResponseType(typeof(UploadResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UploadFile(
+        [FromForm(Name = "File")] IFormFile? file,
+        [FromForm(Name = "Path")] string? path,
+        [FromForm(Name = "ServiceName")] string? serviceName,
+        [FromForm(Name = "Overwrite")] bool overwrite,
+        [FromForm(Name = "RetentionPolicyId")] string? retentionPolicyId,
+        [FromForm(Name = "Metadata")] string? metadata,
+        [FromForm(Name = "Checksum")] string? checksum,
+        CancellationToken cancellationToken)
+    {
+        if (file == null)
+        {
+            return BadRequest(new { error = "File is required" });
+        }
+
+        if (string.IsNullOrWhiteSpace(file.FileName))
+        {
+            return BadRequest(new { error = "File name is required" });
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return BadRequest(new { error = "Path is required" });
+        }
+
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            return BadRequest(new { error = "ServiceName is required" });
+        }
+
+        await using var fileStream = file.OpenReadStream();
+        return await StoreCompletedUploadAsync(
+            fileStream,
+            file.FileName,
+            string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType,
+            file.Length,
+            path,
+            serviceName,
+            overwrite,
+            retentionPolicyId,
+            metadata,
+            checksum,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Uploads a raw request body through the service.
+    /// </summary>
+    [HttpPost("stream")]
+    [RequirePermission(UploadPermissions.FilesUpload)]
+    [ProducesResponseType(typeof(UploadResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UploadStream(
+        [FromQuery] string? path,
+        [FromQuery] string? fileName,
+        [FromQuery] string? serviceName,
+        [FromQuery] bool overwrite,
+        [FromQuery] string? retentionPolicyId,
+        [FromQuery] string? metadata,
+        [FromQuery] string? checksum,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return BadRequest(new { error = "fileName is required" });
+        }
+
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return BadRequest(new { error = "path is required" });
+        }
+
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            return BadRequest(new { error = "serviceName is required" });
+        }
+
+        await using var body = new MemoryStream();
+        await Request.Body.CopyToAsync(body, cancellationToken);
+        body.Position = 0;
+
+        return await StoreCompletedUploadAsync(
+            body,
+            fileName,
+            string.IsNullOrWhiteSpace(Request.ContentType) ? "application/octet-stream" : Request.ContentType,
+            body.Length,
+            path,
+            serviceName,
+            overwrite,
+            retentionPolicyId,
+            metadata,
+            checksum,
+            cancellationToken);
+    }
+
+    /// <summary>
     /// Initiates a direct-to-GCS resumable upload session.
     /// </summary>
     [HttpPost("resumable")]
@@ -494,6 +603,167 @@ public class UploadsController : ControllerBase
         {
             _logger.LogError(ex, "Failed to upload artifact. ArtifactId: {ArtifactId}", request.ArtifactId);
             return StatusCode(500, new { error = "Failed to upload artifact" });
+        }
+    }
+
+    private async Task<IActionResult> StoreCompletedUploadAsync(
+        Stream fileStream,
+        string fileName,
+        string contentType,
+        long fileSize,
+        string path,
+        string serviceName,
+        bool overwrite,
+        string? retentionPolicyId,
+        string? metadata,
+        string? checksum,
+        CancellationToken cancellationToken)
+    {
+        var uploadId = Guid.NewGuid().ToString();
+        var normalizedServiceName = serviceName.Trim();
+
+        try
+        {
+            var sanitizedPath = ResolveUploadPath(path, normalizedServiceName, uploadId);
+
+            if (!await _authorizationService.CanUploadToPathAsync(normalizedServiceName, sanitizedPath, cancellationToken))
+            {
+                _logger.LogWarning(
+                    "Unauthorized upload by service {ServiceName} for path {StoragePath}",
+                    normalizedServiceName,
+                    sanitizedPath);
+                await LogUploadEventAsync(uploadId, normalizedServiceName, sanitizedPath, "Unauthorized", cancellationToken);
+                return Forbid();
+            }
+
+            var validationResult = await _validationService.ValidateFileAsync(
+                fileStream,
+                fileName,
+                contentType,
+                fileSize,
+                cancellationToken);
+
+            if (!validationResult.IsValid)
+            {
+                _logger.LogWarning(
+                    "Upload validation failed for {FileName}: {Errors}",
+                    fileName,
+                    string.Join(", ", validationResult.Errors));
+                await LogUploadEventAsync(uploadId, normalizedServiceName, sanitizedPath, "ValidationFailed", cancellationToken);
+                return BadRequest(new { errors = validationResult.Errors });
+            }
+
+            var existingUpload = await _dbContext.Uploads
+                .FirstOrDefaultAsync(u => u.StoragePath == sanitizedPath, cancellationToken);
+
+            if (existingUpload != null)
+            {
+                if (!overwrite)
+                {
+                    await LogUploadEventAsync(uploadId, normalizedServiceName, sanitizedPath, "PathCollision", cancellationToken);
+                    return Conflict(new { error = $"File already exists at path '{sanitizedPath}'. Set overwrite=true to replace it." });
+                }
+
+                await RemoveExistingUploadAsync(existingUpload, cancellationToken);
+            }
+
+            if (fileStream.CanSeek)
+            {
+                fileStream.Position = 0;
+            }
+
+            var uploadResult = await _storageService.UploadFileAsync(
+                fileStream,
+                sanitizedPath,
+                contentType,
+                overwrite,
+                cancellationToken);
+
+            var persistedChecksum = checksum
+                ?? ConvertGcsMd5ToHex(uploadResult.Md5Hash)
+                ?? "UNKNOWN";
+
+            var upload = new Upload
+            {
+                UploadId = uploadId,
+                ServiceId = normalizedServiceName,
+                FileName = fileName,
+                StoragePath = sanitizedPath,
+                ContentType = uploadResult.ContentType,
+                FileSize = uploadResult.SizeBytes,
+                Checksum = persistedChecksum,
+                BytesUploaded = uploadResult.SizeBytes,
+                Status = UploadStatus.Completed,
+                UploadedAt = uploadResult.UploadedAt,
+                CompletedAt = DateTime.UtcNow,
+                RetentionPolicyId = retentionPolicyId,
+                Metadata = metadata != null
+                    ? new Dictionary<string, string> { { "custom", metadata } }
+                    : null
+            };
+
+            var fileMetadata = new FileMetadata
+            {
+                FileId = Guid.NewGuid().ToString(),
+                UploadId = uploadId,
+                ServiceId = normalizedServiceName,
+                StoragePath = sanitizedPath,
+                VersionETag = uploadResult.ETag,
+                FileSize = uploadResult.SizeBytes,
+                ContentType = uploadResult.ContentType,
+                Checksum = persistedChecksum,
+                UploadedAt = uploadResult.UploadedAt,
+                RetentionPolicyId = retentionPolicyId,
+                Metadata = upload.Metadata
+            };
+
+            if (string.IsNullOrEmpty(fileMetadata.RetentionPolicyId))
+            {
+                var applicablePolicy = await _lifecycleService.GetActiveRetentionPolicyAsync(
+                    normalizedServiceName,
+                    sanitizedPath,
+                    cancellationToken);
+                fileMetadata.RetentionPolicyId = applicablePolicy?.PolicyId;
+            }
+
+            if (!string.IsNullOrEmpty(fileMetadata.RetentionPolicyId))
+            {
+                fileMetadata.ExpiresAt = await _lifecycleService.ApplyRetentionPolicyAsync(
+                    fileMetadata,
+                    fileMetadata.RetentionPolicyId,
+                    cancellationToken);
+            }
+
+            _dbContext.Uploads.Add(upload);
+            _dbContext.FileMetadata.Add(fileMetadata);
+            await LogUploadEventAsync(uploadId, normalizedServiceName, sanitizedPath, "Success", cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            var downloadUrl = await _storageService.GenerateSignedUrlAsync(
+                sanitizedPath,
+                TimeSpan.FromHours(1),
+                cancellationToken);
+
+            await PublishFileUploadedEventAsync(upload, fileMetadata, downloadUrl, cancellationToken);
+
+            _logger.LogInformation(
+                "File uploaded successfully. UploadId: {UploadId}, Service: {ServiceName}, Size: {SizeBytes}",
+                uploadId,
+                normalizedServiceName,
+                uploadResult.SizeBytes);
+
+            return Ok(upload.ToResponse(downloadUrl));
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid upload path for service {ServiceName}: {Path}", normalizedServiceName, path);
+            await LogUploadEventAsync(uploadId, normalizedServiceName, path, "PathTraversalAttempt", cancellationToken);
+            return BadRequest(new { error = $"Invalid path: {ex.Message}" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to upload file. UploadId: {UploadId}", uploadId);
+            return StatusCode(500, new { error = "Failed to upload file" });
         }
     }
 
