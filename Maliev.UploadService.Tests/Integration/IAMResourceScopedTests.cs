@@ -54,7 +54,7 @@ public class IAMResourceScopedTests : IAsyncLifetime
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
-            serviceName,
+            "system:service:invoice",
             UploadPermissions.FilesUpload,
             resourcePath,
             It.IsAny<CancellationToken>()))
@@ -90,7 +90,7 @@ public class IAMResourceScopedTests : IAsyncLifetime
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
-            serviceName,
+            "system:service:invoice",
             UploadPermissions.FilesUpload,
             resourcePath,
             It.IsAny<CancellationToken>()))

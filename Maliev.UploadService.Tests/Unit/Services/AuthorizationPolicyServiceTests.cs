@@ -39,11 +39,11 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
         }
     }
 
-    private AuthorizationPolicyService CreateService(UploadDbContext context)
+    private AuthorizationPolicyService CreateService(UploadDbContext context, Mock<IIamServiceClient>? mockIamClient = null)
     {
         var mockCache = new Mock<IDistributedCache>();
         var mockLogger = new Mock<ILogger<AuthorizationPolicyService>>();
-        var mockIamClient = new Mock<IIamServiceClient>();
+        mockIamClient ??= new Mock<IIamServiceClient>();
 
         var mockMeterFactory = new Mock<IMeterFactory>();
 
@@ -58,6 +58,32 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
         var metrics = new UploadMetrics(mockMeterFactory.Object, configuration);
 
         return new AuthorizationPolicyService(context, mockCache.Object, mockLogger.Object, configuration, mockIamClient.Object, metrics);
+    }
+
+    [Fact]
+    public async Task CanUploadToPathAsync_ServiceName_NormalizesIamPrincipal()
+    {
+        var mockIamClient = new Mock<IIamServiceClient>();
+        mockIamClient
+            .Setup(client => client.CheckPermissionAsync(
+                "system:service:pdf",
+                UploadPermissions.FilesUpload,
+                "folders/pdf/invoices/file.pdf",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var service = CreateService(_context!, mockIamClient);
+
+        var result = await service.CanUploadToPathAsync("PdfService", "pdf/invoices/file.pdf");
+
+        Assert.True(result);
+        mockIamClient.Verify(
+            client => client.CheckPermissionAsync(
+                "system:service:pdf",
+                UploadPermissions.FilesUpload,
+                "folders/pdf/invoices/file.pdf",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
     }
 
     private async Task<Upload> CreateTestUploadAsync(UploadDbContext context, string uploadId, string serviceId = "test-service")

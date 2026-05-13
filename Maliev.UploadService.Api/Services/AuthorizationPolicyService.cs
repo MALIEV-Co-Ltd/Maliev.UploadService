@@ -97,8 +97,9 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
     {
         // 1. IAM Check (Overrides Legacy)
         var resourcePath = $"folders/{path.TrimStart('/')}";
+        var iamPrincipalId = ToIamPrincipalId(serviceId);
         var isAuthorizedViaIAM = await _iamClient.CheckPermissionAsync(
-            serviceId,
+            iamPrincipalId,
             UploadPermissions.FilesUpload,
             resourcePath,
             cancellationToken);
@@ -144,8 +145,9 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
     {
         // 1. IAM Check (Overrides Legacy)
         var resourcePath = $"folders/{path.TrimStart('/')}";
+        var iamPrincipalId = ToIamPrincipalId(serviceId);
         var isAuthorizedViaIAM = await _iamClient.CheckPermissionAsync(
-            serviceId,
+            iamPrincipalId,
             UploadPermissions.FilesRead, // Accessing a path implies reading it
             resourcePath,
             cancellationToken);
@@ -241,5 +243,31 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
         }
 
         return !wouldExceed;
+    }
+
+    private static string ToIamPrincipalId(string serviceId)
+    {
+        var trimmedServiceId = serviceId.Trim();
+        if (Guid.TryParse(trimmedServiceId, out _) ||
+            trimmedServiceId.Contains('@', StringComparison.Ordinal) ||
+            trimmedServiceId.StartsWith("system:service:", StringComparison.OrdinalIgnoreCase))
+        {
+            return trimmedServiceId;
+        }
+
+        if (trimmedServiceId.EndsWith("Service", StringComparison.Ordinal))
+        {
+            var serviceName = trimmedServiceId[..^"Service".Length]
+                .Trim('-', '_', '.', ' ')
+                .ToLowerInvariant();
+            return $"system:service:{serviceName}";
+        }
+
+        if (trimmedServiceId.IndexOfAny(['-', '_', '.', ':']) >= 0)
+        {
+            return trimmedServiceId;
+        }
+
+        return $"system:service:{trimmedServiceId.ToLowerInvariant()}";
     }
 }
