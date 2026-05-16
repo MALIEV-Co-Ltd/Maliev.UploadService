@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Maliev.UploadService.Api.Services;
 
 /// <summary>
@@ -5,6 +7,9 @@ namespace Maliev.UploadService.Api.Services;
 /// </summary>
 public class MockStorageService : IStorageService
 {
+    private static readonly ConcurrentDictionary<string, MockStoredObject> StoredObjects = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, MockUploadSession> ResumableSessions = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly ILogger<MockStorageService> _logger;
 
     /// <summary>
@@ -26,13 +31,16 @@ public class MockStorageService : IStorageService
     {
         _logger.LogInformation("MOCK: Uploading file to {StoragePath}", storagePath);
         await Task.CompletedTask;
+        var uploadedAt = DateTime.UtcNow;
+        var eTag = Guid.NewGuid().ToString();
+        StoredObjects[storagePath] = new MockStoredObject(storagePath, contentType, fileStream.Length, uploadedAt, eTag, "mock-md5");
         return new StorageUploadResult
         {
             StoragePath = storagePath,
             ContentType = contentType,
             SizeBytes = fileStream.Length,
-            UploadedAt = DateTime.UtcNow,
-            ETag = Guid.NewGuid().ToString(),
+            UploadedAt = uploadedAt,
+            ETag = eTag,
             Md5Hash = "mock-md5"
         };
     }
@@ -48,6 +56,7 @@ public class MockStorageService : IStorageService
     public Task DeleteFileAsync(string storagePath, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("MOCK: Deleting file {StoragePath}", storagePath);
+        StoredObjects.TryRemove(storagePath, out _);
         return Task.CompletedTask;
     }
 
@@ -65,6 +74,19 @@ public class MockStorageService : IStorageService
     public Task<StorageFileMetadata?> GetFileMetadataAsync(string storagePath, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("MOCK: Getting metadata for {StoragePath}", storagePath);
+        if (StoredObjects.TryGetValue(storagePath, out var storedObject))
+        {
+            return Task.FromResult<StorageFileMetadata?>(new StorageFileMetadata
+            {
+                Name = storedObject.StoragePath,
+                ContentType = storedObject.ContentType,
+                SizeBytes = storedObject.SizeBytes,
+                CreatedAt = storedObject.CreatedAt,
+                ETag = storedObject.ETag,
+                Md5Hash = storedObject.Md5Hash
+            });
+        }
+
         return Task.FromResult<StorageFileMetadata?>(new StorageFileMetadata
         {
             Name = storagePath,
@@ -84,9 +106,11 @@ public class MockStorageService : IStorageService
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("MOCK: Initiating resumable upload for {StoragePath}", storagePath);
+        var sessionUri = $"https://mock-storage.local/upload/{Guid.NewGuid()}";
+        ResumableSessions[sessionUri] = new MockUploadSession(storagePath, contentType, totalSize);
         return Task.FromResult(new ResumableUploadSession
         {
-            SessionUri = $"https://mock-storage.local/upload/{Guid.NewGuid()}",
+            SessionUri = sessionUri,
             StoragePath = storagePath,
             ExpiresAt = DateTime.UtcNow.AddHours(1)
         });
@@ -102,12 +126,30 @@ public class MockStorageService : IStorageService
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("MOCK: Resuming upload for {SessionUri}", sessionUri);
+        var bytesReceived = endByte + 1;
+        var isComplete = bytesReceived >= totalSize;
+        var storagePath = "mock-path";
+        if (ResumableSessions.TryGetValue(sessionUri, out var session))
+        {
+            storagePath = session.StoragePath;
+            if (isComplete)
+            {
+                StoredObjects[session.StoragePath] = new MockStoredObject(
+                    session.StoragePath,
+                    session.ContentType,
+                    bytesReceived,
+                    DateTime.UtcNow,
+                    Guid.NewGuid().ToString(),
+                    "mock-md5");
+            }
+        }
+
         return Task.FromResult(new ResumableUploadProgress
         {
-            BytesReceived = endByte + 1,
+            BytesReceived = bytesReceived,
             TotalSize = totalSize,
-            IsComplete = endByte + 1 >= totalSize,
-            StoragePath = endByte + 1 >= totalSize ? "mock-path" : null
+            IsComplete = isComplete,
+            StoragePath = isComplete ? storagePath : null
         });
     }
 
@@ -117,4 +159,14 @@ public class MockStorageService : IStorageService
         _logger.LogInformation("MOCK: Updating storage class of {StoragePath} to {StorageClass}", storagePath, targetStorageClass);
         return Task.CompletedTask;
     }
+
+    private sealed record MockUploadSession(string StoragePath, string ContentType, long TotalSize);
+
+    private sealed record MockStoredObject(
+        string StoragePath,
+        string ContentType,
+        long SizeBytes,
+        DateTime CreatedAt,
+        string ETag,
+        string Md5Hash);
 }

@@ -190,20 +190,61 @@ public class UploadDbContext : DbContext
         // Apply PostgreSQL snake_case naming convention globally
         SnakeCaseNamingHelper.ApplySnakeCaseNaming(modelBuilder);
 
-        // Seed default policy for geometry-service (required for integration tests and platform initialization)
-        modelBuilder.Entity<ServiceAuthorizationPolicy>().HasData(new ServiceAuthorizationPolicy
-        {
-            PolicyId = "policy-geometry-service",
-            ServiceId = "geometry-service",
-            ServiceName = "Geometry Analysis Service",
-            AllowedPathPrefixes = new List<string> { "geometry-test", "geometry/" },
-            AllowedContentTypes = new List<string> { "application/octet-stream", "model/stl", "text/plain" },
-            MaxFileSizeBytes = 100 * 1024 * 1024, // 100MB
-            StorageQuotaBytes = 1024 * 1024 * 1024, // 1GB
-            AllowOverwrite = true,
-            CreatedAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-            UpdatedAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
-            IsActive = true
-        });
+        // Seed platform upload policies required by integrated project, PDF, and geometry workflows.
+        modelBuilder.Entity<ServiceAuthorizationPolicy>().HasData(
+            new ServiceAuthorizationPolicy
+            {
+                PolicyId = "policy-geometry-service",
+                ServiceId = "geometry-service",
+                ServiceName = "Geometry Analysis Service",
+                AllowedPathPrefixes = new List<string> { "geometry-test", "geometry/" },
+                AllowedContentTypes = new List<string> { "application/octet-stream", "model/stl", "text/plain" },
+                MaxFileSizeBytes = 100 * 1024 * 1024, // 100MB
+                StorageQuotaBytes = 1024 * 1024 * 1024, // 1GB
+                AllowOverwrite = true,
+                CreatedAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                IsActive = true
+            },
+            new ServiceAuthorizationPolicy
+            {
+                PolicyId = "policy-intranet-bff",
+                ServiceId = "Intranet",
+                ServiceName = "MALIEV Intranet BFF",
+                AllowedPathPrefixes = new List<string> { "customers/", "projects/" },
+                AllowedContentTypes = new List<string>
+                {
+                    "application/octet-stream",
+                    "application/pdf",
+                    "application/step",
+                    "application/iges",
+                    "image/jpeg",
+                    "image/png",
+                    "image/webp",
+                    "model/3mf",
+                    "model/obj",
+                    "model/stl"
+                },
+                MaxFileSizeBytes = 10L * 1024 * 1024 * 1024,
+                StorageQuotaBytes = 100L * 1024 * 1024 * 1024,
+                AllowOverwrite = true,
+                CreatedAt = new DateTime(2026, 5, 15, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = new DateTime(2026, 5, 15, 0, 0, 0, DateTimeKind.Utc),
+                IsActive = true
+            },
+            new ServiceAuthorizationPolicy
+            {
+                PolicyId = "policy-pdf-service",
+                ServiceId = "PdfService",
+                ServiceName = "PDF Service",
+                AllowedPathPrefixes = new List<string> { "pdfs/" },
+                AllowedContentTypes = new List<string> { "application/pdf" },
+                MaxFileSizeBytes = 100 * 1024 * 1024,
+                StorageQuotaBytes = 10L * 1024 * 1024 * 1024,
+                AllowOverwrite = true,
+                CreatedAt = new DateTime(2026, 5, 15, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = new DateTime(2026, 5, 15, 0, 0, 0, DateTimeKind.Utc),
+                IsActive = true
+            });
     }
 }
