@@ -234,6 +234,50 @@ public class UploadDbContext : DbContext
             },
             new ServiceAuthorizationPolicy
             {
+                PolicyId = "policy-web-bff",
+                ServiceId = "WebBff",
+                ServiceName = "MALIEV Web BFF",
+                AllowedPathPrefixes = new List<string> { "quotes/temp/" },
+                AllowedContentTypes = new List<string>
+                {
+                    "application/octet-stream",
+                    "application/step",
+                    "application/iges",
+                    "model/3mf",
+                    "model/obj",
+                    "model/stl"
+                },
+                MaxFileSizeBytes = 10L * 1024 * 1024 * 1024,
+                StorageQuotaBytes = 100L * 1024 * 1024 * 1024,
+                AllowOverwrite = true,
+                CreatedAt = new DateTime(2026, 5, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = new DateTime(2026, 5, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                IsActive = true
+            },
+            new ServiceAuthorizationPolicy
+            {
+                PolicyId = "policy-quote-engine",
+                ServiceId = "QuoteEngine",
+                ServiceName = "MALIEV Quote Engine",
+                AllowedPathPrefixes = new List<string> { "quotes/temp/", "customers/" },
+                AllowedContentTypes = new List<string>
+                {
+                    "application/octet-stream",
+                    "application/step",
+                    "application/iges",
+                    "model/3mf",
+                    "model/obj",
+                    "model/stl"
+                },
+                MaxFileSizeBytes = 10L * 1024 * 1024 * 1024,
+                StorageQuotaBytes = 250L * 1024 * 1024 * 1024,
+                AllowOverwrite = true,
+                CreatedAt = new DateTime(2026, 5, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = new DateTime(2026, 5, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                IsActive = true
+            },
+            new ServiceAuthorizationPolicy
+            {
                 PolicyId = "policy-pdf-service",
                 ServiceId = "PdfService",
                 ServiceName = "PDF Service",

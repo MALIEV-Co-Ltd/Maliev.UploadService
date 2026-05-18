@@ -607,6 +607,8 @@ public class GcsStorageServiceTests
     [InlineData("customers/123/file.pdf", "bucket-customers")]
     [InlineData("CompanyA/orders/456/material.step", "bucket-operations")] // requires /orders/ substring
     [InlineData("CompanyA/invoices/789/inv.pdf", "bucket-financials")] // requires /invoices/ substring
+    [InlineData("quotes/temp/session-1/file.step", "bucket-temp")] // anonymous quote uploads expire from temp
+    [InlineData("customers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/quotes/session-1/file.step", "bucket-customers")]
     [InlineData("uploads/temp.bin", "bucket-temp")] // unmatched -> default
     public async Task FileExistsAsync_RoutesPathToCorrectBucket(string storagePath, string expectedBucket)
     {

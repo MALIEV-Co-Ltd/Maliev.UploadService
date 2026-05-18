@@ -50,6 +50,9 @@ public class GcsStorageService : IStorageService
         if (storagePath.StartsWith("cache/", StringComparison.OrdinalIgnoreCase))
             return _buckets.GetValueOrDefault("cache", "maliev-cache");
 
+        if (storagePath.StartsWith("quotes/temp/", StringComparison.OrdinalIgnoreCase))
+            return _defaultBucket;
+
         if (storagePath.StartsWith("customer-", StringComparison.OrdinalIgnoreCase) ||
             storagePath.StartsWith("customers/", StringComparison.OrdinalIgnoreCase) ||
             storagePath.Contains("/customers/", StringComparison.OrdinalIgnoreCase) ||

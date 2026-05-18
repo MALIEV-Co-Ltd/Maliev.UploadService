@@ -118,11 +118,78 @@ public static class SeedData
             UpdatedAt = DateTime.UtcNow
         };
 
-        context.ServiceAuthorizationPolicies.AddRange(
+        var webBffPolicy = new ServiceAuthorizationPolicy
+        {
+            PolicyId = "policy-web-bff",
+            ServiceId = "WebBff",
+            ServiceName = "MALIEV Web BFF",
+            AllowedPathPrefixes = new List<string>
+            {
+                "quotes/temp/"
+            },
+            AllowedContentTypes = new List<string>
+            {
+                "application/octet-stream",
+                "application/step",
+                "application/iges",
+                "model/3mf",
+                "model/obj",
+                "model/stl"
+            },
+            MaxFileSizeBytes = 10L * 1024 * 1024 * 1024,
+            StorageQuotaBytes = 100L * 1024 * 1024 * 1024,
+            AllowOverwrite = true,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        var quoteEnginePolicy = new ServiceAuthorizationPolicy
+        {
+            PolicyId = "policy-quote-engine",
+            ServiceId = "QuoteEngine",
+            ServiceName = "MALIEV Quote Engine",
+            AllowedPathPrefixes = new List<string>
+            {
+                "quotes/temp/",
+                "customers/"
+            },
+            AllowedContentTypes = new List<string>
+            {
+                "application/octet-stream",
+                "application/step",
+                "application/iges",
+                "model/3mf",
+                "model/obj",
+                "model/stl"
+            },
+            MaxFileSizeBytes = 10L * 1024 * 1024 * 1024,
+            StorageQuotaBytes = 250L * 1024 * 1024 * 1024,
+            AllowOverwrite = true,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        var authorizationPolicies = new[]
+        {
             testServicePolicy,
             demoServicePolicy,
-            apiServicePolicy
-        );
+            apiServicePolicy,
+            webBffPolicy,
+            quoteEnginePolicy
+        };
+
+        var authorizationPolicyIds = authorizationPolicies.Select(policy => policy.PolicyId).ToArray();
+        var existingAuthorizationPolicyIds = await context.ServiceAuthorizationPolicies
+            .Where(policy => authorizationPolicyIds.Contains(policy.PolicyId))
+            .Select(policy => policy.PolicyId)
+            .ToListAsync();
+        var authorizationPoliciesToAdd = authorizationPolicies
+            .Where(policy => !existingAuthorizationPolicyIds.Contains(policy.PolicyId))
+            .ToList();
+
+        context.ServiceAuthorizationPolicies.AddRange(authorizationPoliciesToAdd);
 
         // Sample Retention Policies
         var shortTermPolicy = new RetentionPolicy
@@ -275,7 +342,21 @@ public static class SeedData
             }
         };
 
-        context.RetentionPolicies.AddRange(
+        var quoteTemporaryUploadsPolicy = new RetentionPolicy
+        {
+            PolicyId = "quote-temp-uploads",
+            PolicyName = "Temporary Quote Uploads (7 days)",
+            RetentionDays = 7,
+            ApplyToPathPrefix = "quotes/temp/",
+            ServiceId = null,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            StorageClassTransitions = null // STANDARD only, auto-delete after 7 days
+        };
+
+        var retentionPolicies = new[]
+        {
             shortTermPolicy,
             mediumTermPolicy,
             longTermPolicy,
@@ -284,12 +365,24 @@ public static class SeedData
             financialRecordsPolicy,
             operationsPolicy,
             tempDevPolicy,
-            customerProjectFilesPolicy
-        );
+            customerProjectFilesPolicy,
+            quoteTemporaryUploadsPolicy
+        };
+
+        var retentionPolicyIds = retentionPolicies.Select(policy => policy.PolicyId).ToArray();
+        var existingRetentionPolicyIds = await context.RetentionPolicies
+            .Where(policy => retentionPolicyIds.Contains(policy.PolicyId))
+            .Select(policy => policy.PolicyId)
+            .ToListAsync();
+        var retentionPoliciesToAdd = retentionPolicies
+            .Where(policy => !existingRetentionPolicyIds.Contains(policy.PolicyId))
+            .ToList();
+
+        context.RetentionPolicies.AddRange(retentionPoliciesToAdd);
 
         await context.SaveChangesAsync();
 
         logger.LogInformation("Successfully seeded {AuthPolicyCount} authorization policies and {RetentionPolicyCount} retention policies",
-            3, 9);
+            authorizationPoliciesToAdd.Count, retentionPoliciesToAdd.Count);
     }
 }

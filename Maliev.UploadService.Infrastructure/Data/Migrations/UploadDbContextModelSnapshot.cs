@@ -385,6 +385,36 @@ namespace Maliev.UploadService.Infrastructure.Data.Migrations
                         },
                         new
                         {
+                            PolicyId = "policy-web-bff",
+                            AllowOverwrite = true,
+                            AllowResumableUpload = true,
+                            AllowedContentTypes = "[\"application/octet-stream\",\"application/step\",\"application/iges\",\"model/3mf\",\"model/obj\",\"model/stl\"]",
+                            AllowedPathPrefixes = "[\"quotes/temp/\"]",
+                            CreatedAt = new DateTime(2026, 5, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaxFileSizeBytes = 10737418240L,
+                            ServiceId = "WebBff",
+                            ServiceName = "MALIEV Web BFF",
+                            StorageQuotaBytes = 107374182400L,
+                            UpdatedAt = new DateTime(2026, 5, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
+                            PolicyId = "policy-quote-engine",
+                            AllowOverwrite = true,
+                            AllowResumableUpload = true,
+                            AllowedContentTypes = "[\"application/octet-stream\",\"application/step\",\"application/iges\",\"model/3mf\",\"model/obj\",\"model/stl\"]",
+                            AllowedPathPrefixes = "[\"quotes/temp/\",\"customers/\"]",
+                            CreatedAt = new DateTime(2026, 5, 18, 0, 0, 0, 0, DateTimeKind.Utc),
+                            IsActive = true,
+                            MaxFileSizeBytes = 10737418240L,
+                            ServiceId = "QuoteEngine",
+                            ServiceName = "MALIEV Quote Engine",
+                            StorageQuotaBytes = 268435456000L,
+                            UpdatedAt = new DateTime(2026, 5, 18, 0, 0, 0, 0, DateTimeKind.Utc)
+                        },
+                        new
+                        {
                             PolicyId = "policy-pdf-service",
                             AllowOverwrite = true,
                             AllowResumableUpload = true,
