@@ -121,6 +121,7 @@ try
 
     // Add services
     builder.Services.AddScoped<IAuthorizationPolicyService, AuthorizationPolicyService>();
+    builder.Services.AddHttpContextAccessor();
 
     // IAM Services
     builder.AddIAMServiceClient("upload");
