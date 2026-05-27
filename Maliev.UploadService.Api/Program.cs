@@ -37,6 +37,16 @@ try
 
     // --- API Configuration ---
     builder.AddStandardCors(); // CORS with fail-fast validation
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy(Program.MockStorageCorsPolicy, policy =>
+        {
+            policy.AllowAnyOrigin()
+                .WithMethods(HttpMethods.Get, HttpMethods.Head, HttpMethods.Options)
+                .AllowAnyHeader()
+                .WithExposedHeaders("Accept-Ranges", "Content-Range", "Content-Length", "Content-Type");
+        });
+    });
     builder.AddDefaultApiVersioning(); // API versioning with URL segment reader
 
     // Add OpenAPI (must be in Program.cs for XML comments to work via source generator)
@@ -244,6 +254,11 @@ finally
 /// </summary>
 public partial class Program
 {
+    /// <summary>
+    /// CORS policy used by local mock signed URLs so browser viewers can fetch artifacts directly.
+    /// </summary>
+    public const string MockStorageCorsPolicy = "MockStorageDownloads";
+
     internal static partial class Log
     {
         [LoggerMessage(Level = LogLevel.Information, Message = "Starting {ServiceName} host")]

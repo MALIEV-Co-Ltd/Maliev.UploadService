@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using Maliev.UploadService.Api.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Maliev.UploadService.Api.Controllers.v1;
@@ -21,6 +22,7 @@ public sealed class MockStorageController : ControllerBase
     [HttpGet("{token}")]
     [HttpHead("{token}")]
     [AllowAnonymous]
+    [EnableCors(Program.MockStorageCorsPolicy)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public IActionResult Download(string token)
