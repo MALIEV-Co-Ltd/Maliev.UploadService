@@ -49,6 +49,11 @@ public class InitiateResumableUploadRequest
     public string? Metadata { get; set; }
 
     /// <summary>
+    /// Gets or sets optional structured metadata tags for downstream processors.
+    /// </summary>
+    public Dictionary<string, string>? MetadataTags { get; set; }
+
+    /// <summary>
     /// Gets or sets the retention policy ID to apply to the uploaded file.
     /// </summary>
     [MaxLength(50)]

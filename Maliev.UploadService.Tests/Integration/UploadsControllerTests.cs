@@ -9,6 +9,7 @@ using Maliev.UploadService.Api.Models.Responses;
 using Maliev.UploadService.Tests.Fixtures;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Maliev.UploadService.Api.Services.Auth;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Microsoft.IdentityModel.Tokens;
@@ -362,6 +363,45 @@ public class UploadsControllerTests : IAsyncLifetime
         Assert.NotNull(uploadId);
         Assert.NotNull(sessionUri);
         Assert.NotEqual(Guid.Empty, Guid.Parse(uploadId!));
+    }
+
+    [Fact]
+    public async Task InitiateResumableUpload_WithMetadataTags_PersistsUploadMetadata()
+    {
+        // Arrange
+        var uniqueId = Guid.NewGuid().ToString("N");
+        var request = new
+        {
+            Path = $"test-service/resumable/{uniqueId}.stl",
+            FileName = "local-model.stl",
+            ServiceName = "test-service",
+            ContentType = "model/stl",
+            TotalSize = 1024,
+            Metadata = "legacy-metadata",
+            MetadataTags = new Dictionary<string, string>
+            {
+                ["geometry.executionPolicy"] = "browser_primary",
+                ["geometry.browserRuntime"] = "required",
+                ["geometry.serverGlbExport"] = "skip_for_browser_viewable"
+            }
+        };
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/upload/v1/uploads/resumable", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<InitiateResumableUploadResponse>();
+        Assert.NotNull(result);
+
+        await using var dbContext = _baseFactory.CreateDbContext();
+        var upload = await dbContext.Uploads.SingleAsync(u => u.UploadId == result!.UploadId);
+
+        Assert.NotNull(upload.Metadata);
+        Assert.Equal("browser_primary", upload.Metadata!["geometry.executionPolicy"]);
+        Assert.Equal("required", upload.Metadata["geometry.browserRuntime"]);
+        Assert.Equal("skip_for_browser_viewable", upload.Metadata["geometry.serverGlbExport"]);
+        Assert.Equal("legacy-metadata", upload.Metadata["custom"]);
     }
 
     // T140: Test resumable upload continuation (FR-022)

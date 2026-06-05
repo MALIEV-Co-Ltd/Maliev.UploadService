@@ -246,9 +246,7 @@ public class UploadsController : ControllerBase
                 UploadedAt = DateTime.UtcNow,
                 SessionUri = session.SessionUri,
                 RetentionPolicyId = request.RetentionPolicyId,
-                Metadata = request.Metadata != null
-                    ? new Dictionary<string, string> { { "custom", request.Metadata } }
-                    : null
+                Metadata = BuildUploadMetadata(request)
             };
 
             _dbContext.Uploads.Add(upload);
@@ -782,6 +780,31 @@ public class UploadsController : ControllerBase
         };
 
         return path.ResolvePlaceholders(placeholders).SanitizePath();
+    }
+
+    private static Dictionary<string, string>? BuildUploadMetadata(InitiateResumableUploadRequest request)
+    {
+        Dictionary<string, string>? metadata = null;
+
+        if (request.MetadataTags is { Count: > 0 })
+        {
+            metadata = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (key, value) in request.MetadataTags)
+            {
+                if (!string.IsNullOrWhiteSpace(key) && value is not null)
+                {
+                    metadata[key] = value;
+                }
+            }
+        }
+
+        if (request.Metadata != null)
+        {
+            metadata ??= new Dictionary<string, string>(StringComparer.Ordinal);
+            metadata["custom"] = request.Metadata;
+        }
+
+        return metadata is { Count: > 0 } ? metadata : null;
     }
 
     private async Task RemoveExistingUploadAsync(Upload existingUpload, CancellationToken cancellationToken)
