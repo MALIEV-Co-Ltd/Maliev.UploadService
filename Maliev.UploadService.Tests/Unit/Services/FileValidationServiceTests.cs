@@ -156,4 +156,25 @@ public class FileValidationServiceTests
         Assert.NotNull(result.DetectedContentType);
         Assert.Contains("image", result.DetectedContentType, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task ValidateFileAsync_ExecutableSignatureWithAllowedContentType_ReturnsError()
+    {
+        // Arrange
+        var service = new FileValidationService();
+        var exeContent = new byte[] { 0x4D, 0x5A, 0x90, 0x00 };
+        using var stream = new MemoryStream(exeContent);
+
+        // Act
+        var result = await service.ValidateFileAsync(
+            stream,
+            "fake.step",
+            "application/octet-stream",
+            exeContent.Length);
+
+        // Assert
+        Assert.False(result.IsValid);
+        Assert.Equal("application/x-msdownload", result.DetectedContentType);
+        Assert.Contains(result.Errors, e => e.Contains("signature", StringComparison.OrdinalIgnoreCase));
+    }
 }

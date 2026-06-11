@@ -76,6 +76,11 @@ public class FileValidationService : IValidationService
             if (!string.IsNullOrEmpty(detectedType))
             {
                 result.DetectedContentType = detectedType;
+                if (IsDangerousDetectedContentType(detectedType))
+                {
+                    result.IsValid = false;
+                    result.Errors.Add($"File signature indicates blocked content type '{detectedType}'");
+                }
             }
         }
         catch (Exception ex)
@@ -117,4 +122,7 @@ public class FileValidationService : IValidationService
 
         return null;
     }
+
+    private static bool IsDangerousDetectedContentType(string contentType) =>
+        contentType.Equals("application/x-msdownload", StringComparison.OrdinalIgnoreCase);
 }
