@@ -1,5 +1,6 @@
 using Maliev.Aspire.ServiceDefaults.Database;
 using Maliev.UploadService.Domain.Entities;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -44,6 +45,10 @@ public class UploadDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.AddInboxStateEntity();
+        modelBuilder.AddOutboxMessageEntity();
+        modelBuilder.AddOutboxStateEntity();
 
         // JSON converters for Dictionary properties (works with both PostgreSQL and InMemory)
         var dictionaryConverter = new ValueConverter<Dictionary<string, string>?, string?>(

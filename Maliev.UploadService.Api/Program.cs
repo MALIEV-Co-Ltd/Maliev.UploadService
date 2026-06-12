@@ -93,6 +93,12 @@ try
     // Note: Service Defaults handles host configuration from "rabbitmq" connection string
     builder.AddMassTransitWithRabbitMq(configurator =>
     {
+        configurator.AddEntityFrameworkOutbox<UploadDbContext>(options =>
+        {
+            _ = options.UsePostgres();
+            options.UseBusOutbox();
+        });
+
         // T174: Register BulkDeleteJobConsumer
         configurator.AddConsumer<Maliev.UploadService.Api.Consumers.BulkDeleteJobConsumer>();
 
