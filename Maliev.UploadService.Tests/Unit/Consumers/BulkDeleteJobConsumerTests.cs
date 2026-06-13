@@ -79,7 +79,27 @@ public class BulkDeleteJobConsumerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task Consume_WithoutPayload_IsIgnored()
+    {
+        var message = CreateCommand((BulkDeleteJobCommandPayload?)null);
+        var contextMock = new Mock<ConsumeContext<BulkDeleteJobCommand>>();
+        contextMock.Setup(c => c.Message).Returns(message);
+        contextMock.Setup(c => c.CancellationToken).Returns(CancellationToken.None);
+
+        await _consumer.Consume(contextMock.Object);
+
+        _bulkDeleteServiceMock.Verify(
+            s => s.ProcessBulkDeleteJobAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static BulkDeleteJobCommand CreateCommand(string jobId)
+    {
+        return CreateCommand(new BulkDeleteJobCommandPayload(jobId));
+    }
+
+    private static BulkDeleteJobCommand CreateCommand(BulkDeleteJobCommandPayload? payload)
     {
         return new BulkDeleteJobCommand(
             MessageId: Guid.NewGuid(),
@@ -92,6 +112,6 @@ public class BulkDeleteJobConsumerTests
             CausationId: null,
             OccurredAtUtc: DateTimeOffset.UtcNow,
             IsPublic: false,
-            Payload: new BulkDeleteJobCommandPayload(jobId));
+            Payload: payload!);
     }
 }

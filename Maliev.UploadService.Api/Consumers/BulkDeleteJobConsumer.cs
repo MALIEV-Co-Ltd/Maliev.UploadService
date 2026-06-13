@@ -32,7 +32,14 @@ public class BulkDeleteJobConsumer : IConsumer<BulkDeleteJobCommand>
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task Consume(ConsumeContext<BulkDeleteJobCommand> context)
     {
-        var jobId = context.Message.Payload.JobId;
+        var payload = context.Message.Payload;
+        if (payload is null)
+        {
+            _logger.LogWarning("Ignoring BulkDeleteJobCommand without payload");
+            return;
+        }
+
+        var jobId = payload.JobId;
 
         _logger.LogInformation("Processing bulk delete job. JobId: {JobId}", jobId);
 
