@@ -1,6 +1,7 @@
 using Maliev.Aspire.ServiceDefaults.IAM;
 using Maliev.UploadService.Domain.Entities;
 using Maliev.UploadService.Infrastructure.Persistence;
+using Maliev.UploadService.Api.Data;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
 using Maliev.UploadService.Api.Metrics;
@@ -84,6 +85,20 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
                 "folders/pdf/invoices/file.pdf",
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task SeedSamplePoliciesAsync_WebAndQuotePoliciesAllowFbxUploads()
+    {
+        _context!.ServiceAuthorizationPolicies.RemoveRange(_context.ServiceAuthorizationPolicies);
+        await _context.SaveChangesAsync();
+
+        await SeedData.SeedSamplePoliciesAsync(_context!, Mock.Of<ILogger>(), isDevelopment: true);
+
+        var service = CreateService(_context!);
+
+        Assert.True(await service.IsContentTypeAllowedAsync("WebBff", "application/x-fbx"));
+        Assert.True(await service.IsContentTypeAllowedAsync("QuoteEngine", "application/x-fbx"));
     }
 
     private async Task<Upload> CreateTestUploadAsync(UploadDbContext context, string uploadId, string serviceId = "test-service")

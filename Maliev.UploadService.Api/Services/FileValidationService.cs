@@ -26,6 +26,7 @@ public class FileValidationService : IValidationService
         "model/gltf+json",
         "application/step",
         "application/iges",
+        "application/x-fbx",
         "image/vnd.dwg"
     };
 

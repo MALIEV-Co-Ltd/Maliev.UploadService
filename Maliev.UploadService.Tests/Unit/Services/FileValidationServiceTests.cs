@@ -24,7 +24,8 @@ public class FileValidationServiceTests
     [Theory]
     [InlineData("hero-3d-compressed.glb", "model/gltf-binary")]
     [InlineData("scene.gltf", "model/gltf+json")]
-    public async Task ValidateFileAsync_GltfModelContentType_ReturnsSuccess(string fileName, string contentType)
+    [InlineData("assembly.fbx", "application/x-fbx")]
+    public async Task ValidateFileAsync_ModelContentType_ReturnsSuccess(string fileName, string contentType)
     {
         // Arrange
         var service = new FileValidationService();

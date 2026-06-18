@@ -132,6 +132,7 @@ public static class SeedData
                 "application/octet-stream",
                 "application/step",
                 "application/iges",
+                "application/x-fbx",
                 "model/3mf",
                 "model/obj",
                 "model/stl"
@@ -159,6 +160,7 @@ public static class SeedData
                 "application/octet-stream",
                 "application/step",
                 "application/iges",
+                "application/x-fbx",
                 "model/3mf",
                 "model/obj",
                 "model/stl"
