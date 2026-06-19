@@ -30,11 +30,12 @@ public static class SeedData
 
         if (existingPolicies)
         {
-            logger.LogInformation("Sample policies already exist, skipping seed");
-            return;
+            logger.LogInformation("Sample authorization policies already exist; seeding any missing policies.");
         }
-
-        logger.LogInformation("Seeding sample authorization and retention policies...");
+        else
+        {
+            logger.LogInformation("Seeding sample authorization and retention policies...");
+        }
 
         // Sample Authorization Policies
         var testServicePolicy = new ServiceAuthorizationPolicy
@@ -182,22 +183,59 @@ public static class SeedData
             UpdatedAt = DateTime.UtcNow
         };
 
+        var orderServicePolicy = new ServiceAuthorizationPolicy
+        {
+            PolicyId = "policy-order-service",
+            ServiceId = "OrderService",
+            ServiceName = "MALIEV Order Service",
+            AllowedPathPrefixes = new List<string>
+            {
+                "orders/"
+            },
+            AllowedContentTypes = new List<string>
+            {
+                "application/octet-stream",
+                "application/pdf",
+                "image/jpeg",
+                "image/png",
+                "model/stl",
+                "model/3mf",
+                "model/obj",
+                "application/step",
+                "application/iges"
+            },
+            MaxFileSizeBytes = 10L * 1024 * 1024 * 1024,
+            StorageQuotaBytes = 250L * 1024 * 1024 * 1024,
+            AllowOverwrite = true,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
         var authorizationPolicies = new[]
         {
             testServicePolicy,
             demoServicePolicy,
             apiServicePolicy,
             webBffPolicy,
-            quoteEnginePolicy
+            quoteEnginePolicy,
+            orderServicePolicy
         };
 
         var authorizationPolicyIds = authorizationPolicies.Select(policy => policy.PolicyId).ToArray();
+        var authorizationPolicyServiceIds = authorizationPolicies.Select(policy => policy.ServiceId).ToArray();
         var existingAuthorizationPolicyIds = await context.ServiceAuthorizationPolicies
             .Where(policy => authorizationPolicyIds.Contains(policy.PolicyId))
             .Select(policy => policy.PolicyId)
             .ToListAsync();
+        var existingAuthorizationPolicyServiceIds = await context.ServiceAuthorizationPolicies
+            .Where(policy => authorizationPolicyServiceIds.Contains(policy.ServiceId))
+            .Select(policy => policy.ServiceId)
+            .ToListAsync();
         var authorizationPoliciesToAdd = authorizationPolicies
-            .Where(policy => !existingAuthorizationPolicyIds.Contains(policy.PolicyId))
+            .Where(policy =>
+                !existingAuthorizationPolicyIds.Contains(policy.PolicyId) &&
+                !existingAuthorizationPolicyServiceIds.Contains(policy.ServiceId))
             .ToList();
 
         context.ServiceAuthorizationPolicies.AddRange(authorizationPoliciesToAdd);

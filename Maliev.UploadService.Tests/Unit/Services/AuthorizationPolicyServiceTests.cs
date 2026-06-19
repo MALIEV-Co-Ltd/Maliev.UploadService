@@ -99,6 +99,8 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
 
         Assert.True(await service.IsContentTypeAllowedAsync("WebBff", "application/x-fbx"));
         Assert.True(await service.IsContentTypeAllowedAsync("QuoteEngine", "application/x-fbx"));
+        Assert.True(await service.CanUploadToPathAsync("OrderService", "orders/MO-20260620-0001/files/packet.pdf"));
+        Assert.True(await service.IsContentTypeAllowedAsync("OrderService", "application/octet-stream"));
     }
 
     [Fact]
@@ -113,6 +115,34 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
             "QuoteEngine",
             "customer-documents/customer-id/document-id/receipt.pdf"));
         Assert.True(await service.IsContentTypeAllowedAsync("QuoteEngine", "application/pdf"));
+    }
+
+    [Fact]
+    public async Task SeedSamplePoliciesAsync_AddsOrderPolicyWhenOlderSamplePoliciesExist()
+    {
+        _context!.ServiceAuthorizationPolicies.RemoveRange(_context.ServiceAuthorizationPolicies);
+        _context.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        {
+            PolicyId = Guid.NewGuid().ToString(),
+            ServiceId = "test-service",
+            ServiceName = "Existing Test Service",
+            AllowedPathPrefixes = new List<string> { "test-service/" },
+            AllowedContentTypes = new List<string> { "text/plain" },
+            MaxFileSizeBytes = 1024,
+            StorageQuotaBytes = 1024,
+            AllowOverwrite = false,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+
+        await SeedData.SeedSamplePoliciesAsync(_context!, Mock.Of<ILogger>(), isDevelopment: true);
+
+        var service = CreateService(_context!);
+
+        Assert.True(await service.CanUploadToPathAsync("OrderService", "orders/MO-20260620-0001/files/packet.pdf"));
+        Assert.True(await service.IsContentTypeAllowedAsync("OrderService", "application/octet-stream"));
     }
 
     private async Task<Upload> CreateTestUploadAsync(UploadDbContext context, string uploadId, string serviceId = "test-service")
