@@ -264,12 +264,20 @@ public class UploadDbContext : DbContext
                 PolicyId = "policy-quote-engine",
                 ServiceId = "QuoteEngine",
                 ServiceName = "MALIEV Quote Engine",
-                AllowedPathPrefixes = new List<string> { "quotes/temp/", "customers/" },
+                AllowedPathPrefixes = new List<string> { "quotes/temp/", "customers/", "customer-documents/" },
                 AllowedContentTypes = new List<string>
                 {
                     "application/octet-stream",
+                    "application/pdf",
                     "application/step",
                     "application/iges",
+                    "application/msword",
+                    "application/vnd.ms-excel",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "image/jpeg",
+                    "image/png",
+                    "image/webp",
                     "model/3mf",
                     "model/obj",
                     "model/stl"

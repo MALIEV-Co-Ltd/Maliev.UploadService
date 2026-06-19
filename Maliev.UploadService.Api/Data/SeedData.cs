@@ -153,13 +153,22 @@ public static class SeedData
             AllowedPathPrefixes = new List<string>
             {
                 "quotes/temp/",
-                "customers/"
+                "customers/",
+                "customer-documents/"
             },
             AllowedContentTypes = new List<string>
             {
                 "application/octet-stream",
+                "application/pdf",
                 "application/step",
                 "application/iges",
+                "application/msword",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "image/jpeg",
+                "image/png",
+                "image/webp",
                 "application/x-fbx",
                 "model/3mf",
                 "model/obj",

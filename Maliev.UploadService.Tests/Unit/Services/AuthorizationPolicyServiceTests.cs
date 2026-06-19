@@ -101,6 +101,20 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
         Assert.True(await service.IsContentTypeAllowedAsync("QuoteEngine", "application/x-fbx"));
     }
 
+    [Fact]
+    public async Task MigratedQuoteEnginePolicy_AllowsCustomerDocumentUploads()
+    {
+        var service = CreateService(_context!);
+
+        Assert.True(await service.CanUploadToPathAsync(
+            "QuoteEngine",
+            "customer-documents/customer-id/document-id/receipt.pdf"));
+        Assert.True(await service.CanAccessPathAsync(
+            "QuoteEngine",
+            "customer-documents/customer-id/document-id/receipt.pdf"));
+        Assert.True(await service.IsContentTypeAllowedAsync("QuoteEngine", "application/pdf"));
+    }
+
     private async Task<Upload> CreateTestUploadAsync(UploadDbContext context, string uploadId, string serviceId = "test-service")
     {
         var upload = new Upload
