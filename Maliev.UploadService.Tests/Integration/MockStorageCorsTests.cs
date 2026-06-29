@@ -2,6 +2,7 @@ using System.Net;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Tests.Fixtures;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Maliev.UploadService.Tests.Integration;
@@ -75,6 +76,7 @@ public sealed class MockStorageCorsTests
 
         return new MockStorageService(
             NullLogger<MockStorageService>.Instance,
-            new HttpContextAccessor { HttpContext = httpContext });
+            new HttpContextAccessor { HttpContext = httpContext },
+            new ConfigurationBuilder().Build());
     }
 }

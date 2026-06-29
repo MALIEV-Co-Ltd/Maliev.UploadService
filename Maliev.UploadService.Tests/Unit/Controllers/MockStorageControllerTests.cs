@@ -2,6 +2,7 @@ using Maliev.UploadService.Api.Controllers.v1;
 using Maliev.UploadService.Api.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Maliev.UploadService.Tests.Unit.Controllers;
@@ -63,6 +64,7 @@ public sealed class MockStorageControllerTests
 
         return new MockStorageService(
             NullLogger<MockStorageService>.Instance,
-            new HttpContextAccessor { HttpContext = httpContext });
+            new HttpContextAccessor { HttpContext = httpContext },
+            new ConfigurationBuilder().Build());
     }
 }

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 
 namespace Maliev.UploadService.Api.Services;
 
@@ -14,18 +15,27 @@ public class MockStorageService : IStorageService
 
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ILogger<MockStorageService> _logger;
+    private readonly string? _publicBaseUrl;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MockStorageService"/> class.
     /// </summary>
     /// <param name="logger">Logger instance.</param>
     /// <param name="httpContextAccessor">Accessor for the current request.</param>
+    /// <param name="configuration">
+    /// Configuration used to resolve <c>MockStorage:PublicBaseUrl</c>, the externally-reachable
+    /// address mock signed URLs should point to. Required because the caller that generates a
+    /// signed URL (e.g. the Intranet BFF, reaching UploadService via service discovery) is not
+    /// necessarily reachable at the same host/port as the browser that later loads it directly.
+    /// </param>
     public MockStorageService(
         ILogger<MockStorageService> logger,
-        IHttpContextAccessor httpContextAccessor)
+        IHttpContextAccessor httpContextAccessor,
+        IConfiguration configuration)
     {
         _logger = logger;
         _httpContextAccessor = httpContextAccessor;
+        _publicBaseUrl = configuration["MockStorage:PublicBaseUrl"];
     }
 
     /// <inheritdoc />
@@ -239,6 +249,11 @@ public class MockStorageService : IStorageService
 
     private string BuildMockSignedUrl(string token)
     {
+        if (!string.IsNullOrWhiteSpace(_publicBaseUrl))
+        {
+            return $"{_publicBaseUrl.TrimEnd('/')}/upload/v1/mock-storage/{token}";
+        }
+
         var request = _httpContextAccessor.HttpContext?.Request;
         if (request?.Host.HasValue == true)
         {
