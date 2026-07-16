@@ -50,10 +50,10 @@ public class IAMAdminTests : IAsyncLifetime
         var token = GenerateJwtToken(adminId, "uploadservice", isAdmin: true);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
             adminId,
             UploadPermissions.AdminViewMetrics,
-            null,
+            "global",
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
@@ -74,10 +74,10 @@ public class IAMAdminTests : IAsyncLifetime
         var token = GenerateJwtToken(userId, "uploadservice", isAdmin: false);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
             userId,
             UploadPermissions.AdminBulkDelete,
-            null,
+            "global",
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 

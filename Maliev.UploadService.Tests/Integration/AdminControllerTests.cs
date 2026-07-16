@@ -59,25 +59,25 @@ public class AdminControllerTests : IAsyncLifetime
         _nonAdminToken = GenerateJwtToken("test-service", "uploadservice", isAdmin: false);
 
         // Mock IAM for Admin token
-        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
             "admin-service",
             UploadPermissions.AdminBulkDelete,
-            null,
+            "global",
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
             "admin-service",
             UploadPermissions.StorageManage,
-            null,
+            "global",
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         // Mock IAM for Non-Admin token (explicit denial)
-        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
             "test-service",
             UploadPermissions.AdminBulkDelete,
-            null,
+            "global",
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
