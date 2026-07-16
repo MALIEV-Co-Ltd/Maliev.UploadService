@@ -28,6 +28,7 @@ public class FilesController : ControllerBase
 {
     private readonly IStorageService _storageService;
     private readonly IAuthorizationPolicyService _authorizationService;
+    private readonly UploadCallerContext _callerContext;
     private readonly UploadDbContext _dbContext;
     private readonly IDistributedCache _cache;
     private readonly ILogger<FilesController> _logger;
@@ -39,6 +40,7 @@ public class FilesController : ControllerBase
     /// </summary>
     /// <param name="storageService">The storage service.</param>
     /// <param name="authorizationService">The authorization policy service.</param>
+    /// <param name="callerContext">The authenticated upload caller context.</param>
     /// <param name="dbContext">The database context.</param>
     /// <param name="cache">The distributed cache.</param>
     /// <param name="logger">The logger for this controller.</param>
@@ -46,6 +48,7 @@ public class FilesController : ControllerBase
     public FilesController(
         IStorageService storageService,
         IAuthorizationPolicyService authorizationService,
+        UploadCallerContext callerContext,
         UploadDbContext dbContext,
         IDistributedCache cache,
         ILogger<FilesController> logger,
@@ -53,6 +56,7 @@ public class FilesController : ControllerBase
     {
         _storageService = storageService;
         _authorizationService = authorizationService;
+        _callerContext = callerContext;
         _dbContext = dbContext;
         _cache = cache;
         _logger = logger;
@@ -63,7 +67,7 @@ public class FilesController : ControllerBase
     /// Get file metadata by upload ID with authorization check
     /// </summary>
     [HttpGet("{uploadId}")]
-    [RequirePermission(UploadPermissions.FilesRead, RequireLiveCheck = true)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(FileMetadataResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -71,7 +75,8 @@ public class FilesController : ControllerBase
         string uploadId,
         CancellationToken cancellationToken)
     {
-        var serviceId = User.Identity?.Name ?? "unknown";
+        var caller = _callerContext.GetRequired();
+        var serviceId = caller.PrincipalId;
 
         // Retrieve file metadata from database
         var fileMetadata = await _dbContext.FileMetadata
@@ -84,10 +89,14 @@ public class FilesController : ControllerBase
         }
 
         // T097: Authorization check - ensure service can access this file (Resource-scoped)
-        var canAccess = await _authorizationService.CanAccessPathAsync(
-            serviceId,
-            fileMetadata.StoragePath,
-            cancellationToken);
+        var upload = await _dbContext.Uploads
+            .FirstOrDefaultAsync(item => item.UploadId == uploadId, cancellationToken);
+        var canAccess = CanReadOwnedOrLegacyFile(caller, upload, fileMetadata)
+            && await AuthorizePathAsync(
+                caller,
+                UploadPermissions.FilesRead,
+                fileMetadata.StoragePath,
+                cancellationToken);
 
         if (!canAccess)
         {
@@ -194,7 +203,7 @@ public class FilesController : ControllerBase
     /// Generate signed URL for file download with caching
     /// </summary>
     [HttpPost("{uploadId}/signed-url")]
-    [RequirePermission(UploadPermissions.FilesDownload, RequireLiveCheck = true)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(SignedUrlResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -204,7 +213,8 @@ public class FilesController : ControllerBase
         [FromBody] GenerateSignedUrlRequest request,
         CancellationToken cancellationToken)
     {
-        var serviceId = User.Identity?.Name ?? "unknown";
+        var caller = _callerContext.GetRequired();
+        var serviceId = caller.PrincipalId;
 
         // Retrieve file metadata
         var fileMetadata = await _dbContext.FileMetadata
@@ -217,10 +227,14 @@ public class FilesController : ControllerBase
         }
 
         // T099: Authorization check
-        var canAccess = await _authorizationService.CanAccessPathAsync(
-            serviceId,
-            fileMetadata.StoragePath,
-            cancellationToken);
+        var upload = await _dbContext.Uploads
+            .FirstOrDefaultAsync(u => u.UploadId == uploadId, cancellationToken);
+        var canAccess = CanAccessOwnedUpload(caller, upload)
+            && await AuthorizePathAsync(
+                caller,
+                UploadPermissions.FilesDownload,
+                fileMetadata.StoragePath,
+                cancellationToken);
 
         if (!canAccess)
         {
@@ -298,11 +312,10 @@ public class FilesController : ControllerBase
     /// <summary>
     /// Generate signed URL for file download by GCS storage path.
     /// Used by internal services that have the storage path directly (no uploadId).
-    /// Requires service-account authentication. Skips live IAM check since the
-    /// service-account token was already validated by the auth middleware.
+    /// Requires authenticated path-scoped download authorization.
     /// </summary>
     [HttpPost("by-path/signed-url")]
-    [RequirePermission(UploadPermissions.FilesDownload, RequireLiveCheck = false)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(SignedUrlResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -317,24 +330,31 @@ public class FilesController : ControllerBase
                 return BadRequest(new { error = "StoragePath is required" });
             }
 
-            var serviceId = User.Identity?.Name ?? "unknown";
-
-            var canAccess = await _authorizationService.CanAccessPathAsync(
-                serviceId,
-                request.StoragePath,
+            var caller = _callerContext.GetRequired();
+            var serviceId = caller.PrincipalId;
+            var sanitizedPath = request.StoragePath.SanitizePath();
+            var upload = await _dbContext.Uploads.FirstOrDefaultAsync(
+                item => item.StoragePath == sanitizedPath,
                 cancellationToken);
+
+            var canAccess = CanAccessOwnedUpload(caller, upload)
+                && await AuthorizePathAsync(
+                    caller,
+                    UploadPermissions.FilesDownload,
+                    sanitizedPath,
+                    cancellationToken);
 
             if (!canAccess)
             {
                 _logger.LogWarning(
                     "Unauthorized signed URL by-path request by service {ServiceId} for path {StoragePath}",
                     serviceId,
-                    request.StoragePath);
+                    sanitizedPath);
                 return Forbid();
             }
 
             // Check cache for existing signed URL
-            var cacheKey = $"signed-url:path:{request.StoragePath}:{request.ExpirationMinutes}";
+            var cacheKey = $"signed-url:path:{sanitizedPath}:{request.ExpirationMinutes}";
             var cachedData = await _cache.GetStringAsync(cacheKey, cancellationToken);
 
             string signedUrl;
@@ -346,31 +366,31 @@ public class FilesController : ControllerBase
                 if (parts.Length == 2 && DateTime.TryParse(parts[1], out expiresAt))
                 {
                     signedUrl = parts[0];
-                    _logger.LogDebug("Using cached signed URL for path: {StoragePath}", request.StoragePath);
+                    _logger.LogDebug("Using cached signed URL for path: {StoragePath}", sanitizedPath);
 
                     return Ok(new SignedUrlResponse
                     {
                         SignedUrl = signedUrl,
                         ExpiresAt = expiresAt,
-                        StoragePath = request.StoragePath
+                        StoragePath = sanitizedPath
                     });
                 }
             }
 
             // Verify the object exists before signing — avoids handing out a URL that 404s on use.
-            var exists = await _storageService.FileExistsAsync(request.StoragePath, cancellationToken);
+            var exists = await _storageService.FileExistsAsync(sanitizedPath, cancellationToken);
             if (!exists)
             {
                 _logger.LogWarning(
                     "Object not found in GCS for path: {StoragePath} — returning 410",
-                    request.StoragePath);
-                return StatusCode(StatusCodes.Status410Gone, new { error = "file_missing", storagePath = request.StoragePath });
+                    sanitizedPath);
+                return StatusCode(StatusCodes.Status410Gone, new { error = "file_missing", storagePath = sanitizedPath });
             }
 
             // Generate new signed URL directly from storage path
             var expiration = TimeSpan.FromMinutes(request.ExpirationMinutes);
             signedUrl = await _storageService.GenerateSignedUrlAsync(
-                request.StoragePath,
+                sanitizedPath,
                 expiration,
                 cancellationToken);
 
@@ -386,13 +406,13 @@ public class FilesController : ControllerBase
 
             _logger.LogInformation(
                 "Signed URL generated by path. Service: {ServiceId}, Path: {StoragePath}, ExpirationMinutes: {ExpirationMinutes}",
-                serviceId, request.StoragePath, request.ExpirationMinutes);
+                serviceId, sanitizedPath, request.ExpirationMinutes);
 
             return Ok(new SignedUrlResponse
             {
                 SignedUrl = signedUrl,
                 ExpiresAt = expiresAt,
-                StoragePath = request.StoragePath
+                StoragePath = sanitizedPath
             });
         }
         catch (OperationCanceledException)
@@ -400,13 +420,18 @@ public class FilesController : ControllerBase
             _logger.LogDebug("Client disconnected during signed URL generation for path: {StoragePath}", request.StoragePath);
             return StatusCode(499);
         }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Invalid signed URL storage path: {StoragePath}", request.StoragePath);
+            return BadRequest(new { error = $"Invalid path: {ex.Message}" });
+        }
     }
 
     /// <summary>
     /// Delete file with authorization and retention policy checks (User Story 5)
     /// </summary>
     [HttpDelete("{uploadId}")]
-    [RequirePermission(UploadPermissions.FilesDelete, RequireLiveCheck = true)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -414,7 +439,8 @@ public class FilesController : ControllerBase
         string uploadId,
         CancellationToken cancellationToken)
     {
-        var serviceId = User.Identity?.Name ?? "unknown";
+        var caller = _callerContext.GetRequired();
+        var serviceId = caller.PrincipalId;
 
         // Retrieve file metadata
         var fileMetadata = await _dbContext.FileMetadata
@@ -427,10 +453,14 @@ public class FilesController : ControllerBase
         }
 
         // T121: Authorization check
-        var canAccess = await _authorizationService.CanAccessPathAsync(
-            serviceId,
-            fileMetadata.StoragePath,
-            cancellationToken);
+        var upload = await _dbContext.Uploads
+            .FirstOrDefaultAsync(u => u.UploadId == uploadId, cancellationToken);
+        var canAccess = CanAccessOwnedUpload(caller, upload)
+            && await AuthorizePathAsync(
+                caller,
+                UploadPermissions.FilesDelete,
+                fileMetadata.StoragePath,
+                cancellationToken);
 
         if (!canAccess)
         {
@@ -448,9 +478,6 @@ public class FilesController : ControllerBase
         await _storageService.DeleteFileAsync(fileMetadata.StoragePath, cancellationToken);
 
         // T123: Delete FileMetadata and Upload entities
-        var upload = await _dbContext.Uploads
-            .FirstOrDefaultAsync(u => u.UploadId == uploadId, cancellationToken);
-
         if (upload != null)
         {
             _dbContext.Uploads.Remove(upload);
@@ -493,6 +520,40 @@ public class FilesController : ControllerBase
         ), cancellationToken);
 
         return NoContent();
+    }
+
+    private Task<bool> AuthorizePathAsync(
+        UploadCaller caller,
+        string permissionId,
+        string sanitizedPath,
+        CancellationToken cancellationToken) =>
+        _authorizationService.AuthorizePathLiveAsync(
+            caller.PrincipalId,
+            caller.LegacyPolicyServiceId,
+            permissionId,
+            sanitizedPath,
+            cancellationToken);
+
+    private static bool CanAccessOwnedUpload(UploadCaller caller, Upload? upload) =>
+        upload?.UserId is not null
+        && string.Equals(upload.UserId, caller.PrincipalId, StringComparison.Ordinal);
+
+    private static bool CanReadOwnedOrLegacyFile(
+        UploadCaller caller,
+        Upload? upload,
+        FileMetadata fileMetadata)
+    {
+        if (upload?.UserId is not null)
+        {
+            return string.Equals(upload.UserId, caller.PrincipalId, StringComparison.Ordinal);
+        }
+
+        return caller.IsService
+            && caller.TrustedServiceName is not null
+            && string.Equals(
+                caller.TrustedServiceName,
+                fileMetadata.ServiceId,
+                StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

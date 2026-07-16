@@ -43,7 +43,10 @@ public class FilesControllerEdgeCaseTests : IAsyncLifetime
         _client = _factory.CreateClient();
 
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         _authToken = GenerateJwtToken("test-service", "uploadservice");

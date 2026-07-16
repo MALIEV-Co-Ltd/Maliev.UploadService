@@ -64,6 +64,7 @@ public class IAMUserTests : IAsyncLifetime
         {
             UploadId = uploadId,
             ServiceId = userId,
+            UserId = userId,
             FileName = "file-abc.pdf",
             StoragePath = requestedPath,
             ContentType = "application/pdf",
@@ -86,7 +87,7 @@ public class IAMUserTests : IAsyncLifetime
         });
         await dbContext.SaveChangesAsync();
 
-        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
             userId,
             UploadPermissions.FilesRead,
             resourcePath,
@@ -121,6 +122,7 @@ public class IAMUserTests : IAsyncLifetime
         {
             UploadId = uploadId,
             ServiceId = "other-user",
+            UserId = "other-user",
             FileName = "secret.pdf",
             StoragePath = requestedPath,
             ContentType = "application/pdf",
@@ -143,7 +145,7 @@ public class IAMUserTests : IAsyncLifetime
         });
         await dbContext.SaveChangesAsync();
 
-        _iamClientMock.Setup(x => x.CheckPermissionAsync(
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
             userId,
             UploadPermissions.FilesRead,
             resourcePath,

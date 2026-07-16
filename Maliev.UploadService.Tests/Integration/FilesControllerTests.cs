@@ -44,7 +44,10 @@ public class FilesControllerTests : IAsyncLifetime
 
         // Allow all IAM checks for files management tests
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         _authToken = GenerateJwtToken("test-service", "uploadservice");

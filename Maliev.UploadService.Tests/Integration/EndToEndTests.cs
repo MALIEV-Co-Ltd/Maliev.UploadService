@@ -46,7 +46,10 @@ public class EndToEndTests : IAsyncLifetime
 
         // Allow all IAM checks for E2E tests
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var token = GenerateJwtToken("test-service", "uploadservice");
@@ -260,6 +263,9 @@ public class EndToEndTests : IAsyncLifetime
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "service-b", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+            "service-b", It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         var unauthorizedAccess = await client2.GetAsync($"/upload/v1/files/{uploadId}");
         Assert.Equal(HttpStatusCode.Forbidden, unauthorizedAccess.StatusCode);
@@ -272,6 +278,9 @@ public class EndToEndTests : IAsyncLifetime
         // Mock IAM to allow service-a back
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "service-a", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+            "service-a", It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var authorizedAccess = await client1.GetAsync($"/upload/v1/files/{uploadId}");

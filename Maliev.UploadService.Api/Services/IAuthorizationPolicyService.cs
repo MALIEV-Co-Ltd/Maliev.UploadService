@@ -8,6 +8,17 @@ namespace Maliev.UploadService.Api.Services;
 public interface IAuthorizationPolicyService
 {
     /// <summary>
+    /// Performs a fail-closed live IAM check for an exact permission and server-sanitized storage path.
+    /// Reviewed legacy policy fallback is available only when a trusted legacy service identifier is supplied.
+    /// </summary>
+    Task<bool> AuthorizePathLiveAsync(
+        string principalId,
+        string? legacyPolicyServiceId,
+        string permissionId,
+        string sanitizedPath,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Retrieves the authorization policy for a given service ID
     /// </summary>
     Task<ServiceAuthorizationPolicy?> GetPolicyAsync(string serviceId, CancellationToken cancellationToken = default);

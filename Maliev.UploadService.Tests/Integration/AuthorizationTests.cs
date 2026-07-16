@@ -47,9 +47,15 @@ public class AuthorizationTests : IAsyncLifetime
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "test-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+            "test-service", It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "other-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+            "other-service", It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         _testServiceToken = GenerateJwtToken("test-service", "uploadservice");
@@ -180,8 +186,3 @@ public class AuthorizationTests : IAsyncLifetime
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }
-
-
-
-
-
