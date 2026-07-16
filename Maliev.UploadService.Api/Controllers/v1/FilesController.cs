@@ -67,7 +67,7 @@ public class FilesController : ControllerBase
     /// Get file metadata by upload ID with authorization check
     /// </summary>
     [HttpGet("{uploadId}")]
-    [RequirePermission(UploadPermissions.FilesRead, RequireLiveCheck = true)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(FileMetadataResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -75,7 +75,8 @@ public class FilesController : ControllerBase
         string uploadId,
         CancellationToken cancellationToken)
     {
-        var serviceId = User.Identity?.Name ?? "unknown";
+        var caller = _callerContext.GetRequired();
+        var serviceId = caller.PrincipalId;
 
         // Retrieve file metadata from database
         var fileMetadata = await _dbContext.FileMetadata
@@ -88,10 +89,14 @@ public class FilesController : ControllerBase
         }
 
         // T097: Authorization check - ensure service can access this file (Resource-scoped)
-        var canAccess = await _authorizationService.CanAccessPathAsync(
-            serviceId,
-            fileMetadata.StoragePath,
-            cancellationToken);
+        var upload = await _dbContext.Uploads
+            .FirstOrDefaultAsync(item => item.UploadId == uploadId, cancellationToken);
+        var canAccess = CanReadOwnedOrLegacyFile(caller, upload, fileMetadata)
+            && await AuthorizePathAsync(
+                caller,
+                UploadPermissions.FilesRead,
+                fileMetadata.StoragePath,
+                cancellationToken);
 
         if (!canAccess)
         {
@@ -198,7 +203,7 @@ public class FilesController : ControllerBase
     /// Generate signed URL for file download with caching
     /// </summary>
     [HttpPost("{uploadId}/signed-url")]
-    [RequirePermission(UploadPermissions.FilesDownload, RequireLiveCheck = false)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(SignedUrlResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -310,7 +315,7 @@ public class FilesController : ControllerBase
     /// Requires authenticated path-scoped download authorization.
     /// </summary>
     [HttpPost("by-path/signed-url")]
-    [RequirePermission(UploadPermissions.FilesDownload, RequireLiveCheck = false)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(SignedUrlResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -328,11 +333,9 @@ public class FilesController : ControllerBase
             var caller = _callerContext.GetRequired();
             var serviceId = caller.PrincipalId;
             var sanitizedPath = request.StoragePath.SanitizePath();
-            var upload = caller.IsManagedService
-                ? await _dbContext.Uploads.FirstOrDefaultAsync(
-                    item => item.StoragePath == sanitizedPath,
-                    cancellationToken)
-                : null;
+            var upload = await _dbContext.Uploads.FirstOrDefaultAsync(
+                item => item.StoragePath == sanitizedPath,
+                cancellationToken);
 
             var canAccess = CanAccessOwnedUpload(caller, upload)
                 && await AuthorizePathAsync(
@@ -428,7 +431,7 @@ public class FilesController : ControllerBase
     /// Delete file with authorization and retention policy checks (User Story 5)
     /// </summary>
     [HttpDelete("{uploadId}")]
-    [RequirePermission(UploadPermissions.FilesDelete, RequireLiveCheck = false)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -532,9 +535,26 @@ public class FilesController : ControllerBase
             cancellationToken);
 
     private static bool CanAccessOwnedUpload(UploadCaller caller, Upload? upload) =>
-        !caller.IsManagedService
-        || upload?.UserId is null
-        || string.Equals(upload.UserId, caller.PrincipalId, StringComparison.Ordinal);
+        upload?.UserId is not null
+        && string.Equals(upload.UserId, caller.PrincipalId, StringComparison.Ordinal);
+
+    private static bool CanReadOwnedOrLegacyFile(
+        UploadCaller caller,
+        Upload? upload,
+        FileMetadata fileMetadata)
+    {
+        if (upload?.UserId is not null)
+        {
+            return string.Equals(upload.UserId, caller.PrincipalId, StringComparison.Ordinal);
+        }
+
+        return caller.IsService
+            && caller.TrustedServiceName is not null
+            && string.Equals(
+                caller.TrustedServiceName,
+                fileMetadata.ServiceId,
+                StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Log file-related events for audit trail

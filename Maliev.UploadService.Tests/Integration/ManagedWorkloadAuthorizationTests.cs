@@ -39,7 +39,7 @@ public sealed class ManagedWorkloadAuthorizationTests : IAsyncLifetime
                 It.IsAny<string>(),
                 It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(true);
+            .ReturnsAsync(false);
         return Task.CompletedTask;
     }
 
@@ -213,7 +213,7 @@ public sealed class ManagedWorkloadAuthorizationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task LegacyNullOwner_ManagedCallerWithExactScopeCanGenerateSignedUrl()
+    public async Task LegacyNullOwner_ManagedCallerCannotGenerateSignedUrl()
     {
         var principalId = Guid.NewGuid().ToString("D");
         var uploadId = Guid.NewGuid().ToString("D");
@@ -255,17 +255,7 @@ public sealed class ManagedWorkloadAuthorizationTests : IAsyncLifetime
             $"/upload/v1/files/{uploadId}/signed-url",
             new { ExpirationMinutes = 5 });
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        _iamClient.Verify(client => client.CheckPermissionLiveAsync(
-            principalId,
-            "upload.files.download",
-            $"folders/{path}",
-            It.IsAny<CancellationToken>()), Times.Once);
-        _iamClient.Verify(client => client.CheckPermissionLiveAsync(
-            principalId,
-            "upload.files.download",
-            "global",
-            It.IsAny<CancellationToken>()), Times.Never);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -285,6 +275,171 @@ public sealed class ManagedWorkloadAuthorizationTests : IAsyncLifetime
         var upload = await db.Uploads.SingleAsync(item => item.StoragePath == path);
         Assert.Equal(principalId, upload.UserId);
         Assert.Equal("test-service", upload.ServiceId);
+    }
+
+    [Fact]
+    public async Task OwnedUpload_CrossCustomerEmployeeAndLegacyCallersAreDenied()
+    {
+        var ownerId = $"customer-{Guid.NewGuid():N}";
+        var path = $"customers/{Guid.NewGuid():N}/owned.txt";
+        AllowAllLiveForPath(path);
+        using var owner = CreateUserClient(ownerId, "ignored");
+        var uploadResponse = await owner.PostAsync(
+            "/upload/v1/uploads",
+            CreateMultipart(path, "customer-portal", false));
+        Assert.Equal(HttpStatusCode.OK, uploadResponse.StatusCode);
+        var uploaded = await uploadResponse.Content.ReadFromJsonAsync<UploadResponse>();
+        Assert.NotNull(uploaded);
+
+        using var customer = CreateTypedUserClient($"customer-{Guid.NewGuid():N}", "customer");
+        using var employee = CreateTypedUserClient($"employee-{Guid.NewGuid():N}", "employee");
+        using var legacy = CreateServiceClient("legacy-contact", "ContactService");
+
+        foreach (var attacker in new[] { customer, employee, legacy })
+        {
+            var response = await attacker.PostAsJsonAsync(
+                $"/upload/v1/files/{uploaded.UploadId}/signed-url",
+                new { ExpirationMinutes = 5 });
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task NullOwnerUpload_AllLifecycleAndDestructiveOperationsAreDenied()
+    {
+        var principalId = Guid.NewGuid().ToString("D");
+        var uploadId = Guid.NewGuid().ToString("D");
+        var path = $"contacts/{Guid.NewGuid():N}/unowned.txt";
+        await SeedCompletedUploadAsync(uploadId, path, "ContactService", userId: null);
+        AllowAllLiveForPath(path);
+        using var client = CreateServiceClient(principalId, "ContactService");
+
+        var signed = await client.PostAsJsonAsync(
+            $"/upload/v1/files/{uploadId}/signed-url",
+            new { ExpirationMinutes = 5 });
+        var deleted = await client.DeleteAsync($"/upload/v1/files/{uploadId}");
+        var completed = await client.PostAsJsonAsync(
+            $"/upload/v1/uploads/resumable/{uploadId}/complete",
+            new { });
+        var resumed = await client.PutAsync(
+            $"/upload/v1/uploads/resumable/{uploadId}",
+            new ByteArrayContent([1]));
+        var overwritten = await client.PostAsync(
+            "/upload/v1/uploads",
+            CreateMultipart(path, "ContactService", true));
+
+        Assert.All(
+            new[] { signed, deleted, completed, resumed, overwritten },
+            response => Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode));
+    }
+
+    [Fact]
+    public async Task RawStoragePathWithoutUploadOwner_CannotBeSigned()
+    {
+        var principalId = Guid.NewGuid().ToString("D");
+        var path = $"contacts/{Guid.NewGuid():N}/orphan.txt";
+        AllowAllLiveForPath(path);
+        using var client = CreateServiceClient(principalId, "ContactService");
+
+        var signed = await client.PostAsJsonAsync("/upload/v1/files/by-path/signed-url", new
+        {
+            StoragePath = path,
+            ExpirationMinutes = 5
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, signed.StatusCode);
+    }
+
+    [Fact]
+    public async Task ArtifactUpload_OwnerWithinParentNamespace_PersistsInheritedOwnership()
+    {
+        var ownerId = Guid.NewGuid().ToString("D");
+        var parentId = Guid.NewGuid().ToString("D");
+        var namespaceId = Guid.NewGuid().ToString("N");
+        var parentPath = $"contacts/{namespaceId}/model.step";
+        var artifactPath = $"contacts/{namespaceId}/model.viewer.glb";
+        var artifactId = Guid.NewGuid();
+        await SeedCompletedUploadAsync(parentId, parentPath, "ContactService", ownerId);
+        AllowLive(ownerId, "upload.files.upload", $"folders/{artifactPath}");
+        using var client = CreateServiceClient(ownerId, "ContactService");
+
+        var response = await client.PostAsJsonAsync("/upload/v1/uploads/artifacts", new
+        {
+            ArtifactId = artifactId,
+            ParentUploadId = Guid.Parse(parentId),
+            StoragePath = artifactPath,
+            ContentType = "model/gltf-binary",
+            ArtifactData = Convert.ToBase64String([1, 2, 3])
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        await using var db = _baseFactory.CreateDbContext();
+        var artifact = await db.Uploads.SingleAsync(item => item.UploadId == artifactId.ToString("D"));
+        Assert.Equal(ownerId, artifact.UserId);
+        Assert.Equal(artifactPath, artifact.StoragePath);
+    }
+
+    [Fact]
+    public async Task ArtifactUpload_CrossOwnerOrOutsideParentNamespace_IsDeniedWithoutPersistence()
+    {
+        var ownerId = Guid.NewGuid().ToString("D");
+        var attackerId = Guid.NewGuid().ToString("D");
+        var parentId = Guid.NewGuid().ToString("D");
+        var namespaceId = Guid.NewGuid().ToString("N");
+        var parentPath = $"contacts/{namespaceId}/model.step";
+        var siblingPath = $"contacts/{namespaceId}/model.viewer.glb";
+        var outsidePath = $"contacts/{Guid.NewGuid():N}/model.viewer.glb";
+        await SeedCompletedUploadAsync(parentId, parentPath, "ContactService", ownerId);
+        AllowAllLiveForPath(siblingPath);
+        AllowAllLiveForPath(outsidePath);
+        using var attacker = CreateServiceClient(attackerId, "ContactService");
+        using var owner = CreateServiceClient(ownerId, "ContactService");
+        var crossOwnerArtifactId = Guid.NewGuid();
+        var outsideArtifactId = Guid.NewGuid();
+
+        var crossOwner = await attacker.PostAsJsonAsync("/upload/v1/uploads/artifacts", new
+        {
+            ArtifactId = crossOwnerArtifactId,
+            ParentUploadId = Guid.Parse(parentId),
+            StoragePath = siblingPath,
+            ContentType = "model/gltf-binary",
+            ArtifactData = Convert.ToBase64String([1])
+        });
+        var outside = await owner.PostAsJsonAsync("/upload/v1/uploads/artifacts", new
+        {
+            ArtifactId = outsideArtifactId,
+            ParentUploadId = Guid.Parse(parentId),
+            StoragePath = outsidePath,
+            ContentType = "model/gltf-binary",
+            ArtifactData = Convert.ToBase64String([1])
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, crossOwner.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, outside.StatusCode);
+        await using var db = _baseFactory.CreateDbContext();
+        Assert.False(await db.Uploads.AnyAsync(item =>
+            item.UploadId == crossOwnerArtifactId.ToString("D")
+            || item.UploadId == outsideArtifactId.ToString("D")));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(" ")]
+    public async Task ScopedUpload_MissingOrMalformedSubject_ReturnsForbiddenNotServerError(string? subject)
+    {
+        var path = $"contacts/{Guid.NewGuid():N}/invalid-subject.step";
+        using var client = CreateClientWithOptionalSubject(subject, "ContactService");
+
+        var response = await client.PostAsJsonAsync("/upload/v1/uploads/resumable", new
+        {
+            Path = path,
+            FileName = "invalid-subject.step",
+            ServiceName = "ContactService",
+            ContentType = "application/step",
+            TotalSize = 128
+        });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     private HttpClient CreateServiceClient(string principalId, string serviceName)
@@ -308,24 +463,91 @@ public sealed class ManagedWorkloadAuthorizationTests : IAsyncLifetime
         return client;
     }
 
+    private HttpClient CreateTypedUserClient(string principalId, string userType)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            CreateToken(principalId, new Claim("user_type", userType)));
+        return client;
+    }
+
+    private HttpClient CreateClientWithOptionalSubject(string? principalId, string serviceName)
+    {
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new("service_name", serviceName),
+            new("user_type", "service")
+        };
+        if (principalId is not null)
+        {
+            claims.Add(new Claim(JwtRegisteredClaimNames.Sub, principalId));
+        }
+
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            WriteToken(claims));
+        return client;
+    }
+
     private string CreateToken(string principalId, params Claim[] additionalClaims)
     {
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, principalId),
-            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-            new("permission", "upload.files.upload"),
-            new("permission", "upload.files.download"),
-            new("permission", "upload.files.delete")
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
         claims.AddRange(additionalClaims);
-        return new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(
+        return WriteToken(claims);
+    }
+
+    private string WriteToken(IEnumerable<Claim> claims) =>
+        new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(
             issuer: "test-issuer",
             audience: "test-audience",
             claims: claims,
             expires: DateTime.UtcNow.AddMinutes(10),
             signingCredentials: _baseFactory.SigningCredentials));
+
+    private async Task SeedCompletedUploadAsync(
+        string uploadId,
+        string path,
+        string serviceId,
+        string? userId)
+    {
+        await using var db = _baseFactory.CreateDbContext();
+        db.Uploads.Add(new Upload
+        {
+            UploadId = uploadId,
+            ServiceId = serviceId,
+            UserId = userId,
+            FileName = Path.GetFileName(path),
+            ContentType = "text/plain",
+            FileSize = 6,
+            StoragePath = path,
+            BytesUploaded = 6,
+            Status = UploadStatus.Completed,
+            UploadedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow
+        });
+        db.FileMetadata.Add(CreateFileMetadata(uploadId, path, serviceId));
+        await db.SaveChangesAsync();
     }
+
+    private static FileMetadata CreateFileMetadata(string uploadId, string path, string serviceId) => new()
+    {
+        FileId = Guid.NewGuid().ToString("D"),
+        UploadId = uploadId,
+        ServiceId = serviceId,
+        StoragePath = path,
+        VersionETag = "test-etag",
+        FileSize = 6,
+        ContentType = "text/plain",
+        Checksum = "test",
+        UploadedAt = DateTime.UtcNow
+    };
 
     private static MultipartFormDataContent CreateMultipart(string path, string serviceName, bool overwrite)
     {
@@ -359,7 +581,7 @@ public sealed class ManagedWorkloadAuthorizationTests : IAsyncLifetime
         _iamClient.Setup(client => client.CheckPermissionLiveAsync(
                 It.IsAny<string>(),
                 It.IsAny<string>(),
-                It.Is<string?>(resource => resource == "global" || resource == $"folders/{path}"),
+                $"folders/{path}",
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 }

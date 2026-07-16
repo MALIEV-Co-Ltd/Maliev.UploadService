@@ -3,7 +3,9 @@ using Maliev.UploadService.Api.Controllers.v1;
 using Maliev.UploadService.Api.Models.Requests;
 using Maliev.UploadService.Api.Services;
 using Maliev.UploadService.Api.Services.Auth;
+using Maliev.UploadService.Domain.Entities;
 using Maliev.UploadService.Infrastructure.Persistence;
+using Maliev.UploadService.Tests.Fixtures;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -20,9 +22,10 @@ namespace Maliev.UploadService.Tests.Unit.Controllers;
 /// Unit tests for <see cref="FilesController.GenerateSignedUrlByPath"/>.
 /// Verifies the GCS existence check added to prevent handing out 404-destined signed URLs.
 /// </summary>
-public class FilesControllerByPathTests
+[Collection("TestDatabase")]
+public class FilesControllerByPathTests(TestDatabaseFixture fixture)
 {
-    private static FilesController MakeController(
+    private FilesController MakeController(
         bool fileExists,
         bool canAccess = true,
         string? cachedUrl = null,
@@ -60,10 +63,7 @@ public class FilesControllerByPathTests
             cache = new MemoryDistributedCache(cacheOptions);
         }
 
-        var dbOptions = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql("Host=fake;Database=fake")
-            .Options;
-        var dbContext = new UploadDbContext(dbOptions);
+        var dbContext = CreateOwnedPathContext();
 
         var publishMock = new Mock<IPublishEndpoint>();
         var httpContext = CreateHttpContext();
@@ -145,16 +145,13 @@ public class FilesControllerByPathTests
         var cachedSignedUrl = "https://storage.googleapis.com/cached?sig=abc";
         cache.SetString(cacheKey, $"{cachedSignedUrl}|{DateTime.UtcNow.AddMinutes(60):O}");
 
-        var dbOptions = new DbContextOptionsBuilder<UploadDbContext>()
-            .UseNpgsql("Host=fake;Database=fake")
-            .Options;
-
+        var dbContext = CreateOwnedPathContext();
         var httpContext = CreateHttpContext();
         var controller = new FilesController(
             storageMock.Object,
             authMock.Object,
             new UploadCallerContext(new HttpContextAccessor { HttpContext = httpContext }),
-            new UploadDbContext(dbOptions),
+            dbContext,
             cache,
             NullLogger<FilesController>.Instance,
             new Mock<IPublishEndpoint>().Object);
@@ -192,5 +189,29 @@ public class FilesControllerByPathTests
                 "Bearer"))
         };
         return context;
+    }
+
+    private UploadDbContext CreateOwnedPathContext()
+    {
+        var dbContext = fixture.CreateDbContext();
+        dbContext.Uploads.RemoveRange(
+            dbContext.Uploads.Where(upload => upload.StoragePath == "some/path.stl"));
+        dbContext.SaveChanges();
+        dbContext.Uploads.Add(new Upload
+        {
+            UploadId = Guid.NewGuid().ToString("D"),
+            ServiceId = "test-service",
+            UserId = "test-service",
+            FileName = "path.stl",
+            ContentType = "model/stl",
+            FileSize = 1,
+            StoragePath = "some/path.stl",
+            BytesUploaded = 1,
+            Status = UploadStatus.Completed,
+            UploadedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow
+        });
+        dbContext.SaveChanges();
+        return dbContext;
     }
 }

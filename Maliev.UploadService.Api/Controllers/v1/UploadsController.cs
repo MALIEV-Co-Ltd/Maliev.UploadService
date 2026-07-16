@@ -11,6 +11,7 @@ using Maliev.UploadService.Api.Services.Auth;
 using Maliev.UploadService.Domain.Entities;
 using Maliev.UploadService.Infrastructure.Persistence;
 using MassTransit;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -61,7 +62,7 @@ public class UploadsController : ControllerBase
     /// </summary>
     [HttpPost]
     [Consumes("multipart/form-data")]
-    [RequirePermission(UploadPermissions.FilesUpload)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(UploadResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -122,7 +123,7 @@ public class UploadsController : ControllerBase
     /// Uploads a raw request body through the service.
     /// </summary>
     [HttpPost("stream")]
-    [RequirePermission(UploadPermissions.FilesUpload)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(UploadResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -181,7 +182,7 @@ public class UploadsController : ControllerBase
     /// Initiates a direct-to-GCS resumable upload session.
     /// </summary>
     [HttpPost("resumable")]
-    [RequirePermission(UploadPermissions.FilesUpload)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(InitiateResumableUploadResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -309,7 +310,7 @@ public class UploadsController : ControllerBase
     /// Completes a direct-to-GCS resumable upload after the client has uploaded to GCS.
     /// </summary>
     [HttpPost("resumable/{uploadId}/complete")]
-    [RequirePermission(UploadPermissions.FilesUpload)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(UploadResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -431,7 +432,7 @@ public class UploadsController : ControllerBase
     /// Prefer direct PUT to the session URI returned by <see cref="InitiateResumableUpload"/>.
     /// </summary>
     [HttpPut("resumable/{uploadId}")]
-    [RequirePermission(UploadPermissions.FilesUpload)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(ResumeUploadResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status308PermanentRedirect)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -550,7 +551,7 @@ public class UploadsController : ControllerBase
     /// </summary>
     [HttpPost("artifacts")]
     [Consumes("application/json")]
-    [RequirePermission(UploadPermissions.FilesUpload)]
+    [Authorize(Policy = UploadAuthorizationPolicies.AuthenticatedSubject)]
     [ProducesResponseType(typeof(ArtifactUploadResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -588,6 +589,20 @@ public class UploadsController : ControllerBase
                 return BadRequest(new { error = $"Invalid path: {ex.Message}" });
             }
 
+            var parentUploadId = request.ParentUploadId.ToString("D");
+            var parentUpload = await _dbContext.Uploads
+                .FirstOrDefaultAsync(upload => upload.UploadId == parentUploadId, cancellationToken);
+            if (parentUpload == null)
+            {
+                return NotFound(new { error = "Parent upload was not found" });
+            }
+
+            if (!CanMutateOwnedUpload(caller, parentUpload)
+                || !IsWithinParentNamespace(parentUpload.StoragePath, sanitizedPath))
+            {
+                return Forbid();
+            }
+
             if (!await AuthorizePathAsync(caller, UploadPermissions.FilesUpload, sanitizedPath, cancellationToken))
             {
                 _logger.LogWarning(
@@ -598,20 +613,71 @@ public class UploadsController : ControllerBase
                 return Forbid();
             }
 
+            var artifactUploadId = request.ArtifactId.ToString("D");
+            var existingArtifact = await _dbContext.Uploads.FirstOrDefaultAsync(
+                upload => upload.UploadId == artifactUploadId || upload.StoragePath == sanitizedPath,
+                cancellationToken);
+            if (existingArtifact != null)
+            {
+                if (!CanMutateOwnedUpload(caller, existingArtifact)
+                    || !string.Equals(existingArtifact.StoragePath, sanitizedPath, StringComparison.Ordinal))
+                {
+                    return Forbid();
+                }
+
+                await RemoveExistingUploadAsync(existingArtifact, cancellationToken);
+            }
+
             using var stream = new MemoryStream(artifactBytes);
-            await _storageService.UploadFileAsync(
+            var uploadResult = await _storageService.UploadFileAsync(
                 stream,
                 sanitizedPath,
                 request.ContentType,
                 overwrite: true,
                 cancellationToken);
 
+            var checksum = ConvertGcsMd5ToHex(uploadResult.Md5Hash) ?? "UNKNOWN";
+            var artifactUpload = new Upload
+            {
+                UploadId = artifactUploadId,
+                ServiceId = parentUpload.ServiceId,
+                UserId = parentUpload.UserId,
+                FileName = Path.GetFileName(sanitizedPath),
+                StoragePath = sanitizedPath,
+                ContentType = uploadResult.ContentType,
+                FileSize = uploadResult.SizeBytes,
+                Checksum = checksum,
+                BytesUploaded = uploadResult.SizeBytes,
+                Status = UploadStatus.Completed,
+                UploadedAt = uploadResult.UploadedAt,
+                CompletedAt = DateTime.UtcNow,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["parentUploadId"] = parentUpload.UploadId
+                }
+            };
+            var artifactMetadata = new FileMetadata
+            {
+                FileId = Guid.NewGuid().ToString("D"),
+                UploadId = artifactUploadId,
+                ServiceId = parentUpload.ServiceId,
+                StoragePath = sanitizedPath,
+                VersionETag = uploadResult.ETag,
+                FileSize = uploadResult.SizeBytes,
+                ContentType = uploadResult.ContentType,
+                Checksum = checksum,
+                UploadedAt = uploadResult.UploadedAt,
+                Metadata = artifactUpload.Metadata
+            };
+            _dbContext.Uploads.Add(artifactUpload);
+            _dbContext.FileMetadata.Add(artifactMetadata);
+            await LogUploadEventAsync(artifactUploadId, serviceName, sanitizedPath, "ArtifactUploaded", cancellationToken);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
             var downloadUrl = await _storageService.GenerateSignedUrlAsync(
                 sanitizedPath,
                 TimeSpan.FromHours(1),
                 cancellationToken);
-
-            await LogUploadEventAsync(request.ArtifactId.ToString(), serviceName, sanitizedPath, "ArtifactUploaded", cancellationToken);
 
             _logger.LogInformation(
                 "Artifact uploaded successfully. ArtifactId: {ArtifactId}, Path: {Path}",
@@ -630,6 +696,18 @@ public class UploadsController : ControllerBase
             _logger.LogError(ex, "Failed to upload artifact. ArtifactId: {ArtifactId}", request.ArtifactId);
             return StatusCode(500, new { error = "Failed to upload artifact" });
         }
+    }
+
+    private static bool IsWithinParentNamespace(string parentPath, string artifactPath)
+    {
+        var separatorIndex = parentPath.LastIndexOf('/');
+        if (separatorIndex <= 0)
+        {
+            return false;
+        }
+
+        var parentNamespace = parentPath[..separatorIndex];
+        return artifactPath.StartsWith($"{parentNamespace}/", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<IActionResult> StoreCompletedUploadAsync(
@@ -914,9 +992,8 @@ public class UploadsController : ControllerBase
     }
 
     private static bool CanMutateOwnedUpload(UploadCaller caller, Upload upload) =>
-        !caller.IsManagedService
-        || upload.UserId is null
-        || string.Equals(upload.UserId, caller.PrincipalId, StringComparison.Ordinal);
+        upload.UserId is not null
+        && string.Equals(upload.UserId, caller.PrincipalId, StringComparison.Ordinal);
 
     private static bool TryResolveLogicalServiceName(
         UploadCaller caller,

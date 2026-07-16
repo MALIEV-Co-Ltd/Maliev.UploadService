@@ -8,6 +8,8 @@ using Maliev.UploadService.Infrastructure.Persistence;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 // Initialize bootstrap logging
 using var loggerFactory = LoggerFactory.Create(logBuilder => logBuilder.AddConsole());
@@ -33,7 +35,19 @@ try
     // JWT Authentication (tests override via PostConfigureAll with dynamic RSA keys)
     builder.AddJwtAuthentication();
 
-    builder.Services.AddAuthorization();
+    builder.Services.AddAuthorization(options =>
+    {
+        options.AddPolicy(UploadAuthorizationPolicies.AuthenticatedSubject, policy =>
+        {
+            policy.RequireAuthenticatedUser();
+            policy.RequireAssertion(context =>
+            {
+                var subject = context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                    ?? context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                return !string.IsNullOrWhiteSpace(subject);
+            });
+        });
+    });
 
     // --- API Configuration ---
     builder.AddStandardCors(); // CORS with fail-fast validation
