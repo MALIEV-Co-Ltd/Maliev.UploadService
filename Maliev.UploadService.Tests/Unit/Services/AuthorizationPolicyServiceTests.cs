@@ -88,6 +88,89 @@ public class AuthorizationPolicyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AuthorizePathLiveAsync_ManagedPrincipal_UsesExactPrincipalPermissionAndSanitizedResource()
+    {
+        var principalId = Guid.NewGuid().ToString("D");
+        var mockIamClient = new Mock<IIamServiceClient>();
+        mockIamClient
+            .Setup(client => client.CheckPermissionLiveAsync(
+                principalId,
+                UploadPermissions.FilesUpload,
+                "folders/contacts/42/model.step",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var service = CreateService(_context!, mockIamClient);
+
+        var result = await service.AuthorizePathLiveAsync(
+            principalId,
+            legacyPolicyServiceId: null,
+            UploadPermissions.FilesUpload,
+            "contacts/42/model.step");
+
+        Assert.True(result);
+        mockIamClient.VerifyAll();
+    }
+
+    [Fact]
+    public async Task AuthorizePathLiveAsync_ManagedPrincipalDenied_DoesNotUseLegacyPolicyFallback()
+    {
+        var principalId = Guid.NewGuid().ToString("D");
+        var mockIamClient = new Mock<IIamServiceClient>();
+        mockIamClient
+            .Setup(client => client.CheckPermissionLiveAsync(
+                principalId,
+                UploadPermissions.FilesDelete,
+                "folders/orders/secret.pdf",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        var service = CreateService(_context!, mockIamClient);
+
+        var result = await service.AuthorizePathLiveAsync(
+            principalId,
+            legacyPolicyServiceId: null,
+            UploadPermissions.FilesDelete,
+            "orders/secret.pdf");
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task AuthorizePathLiveAsync_LegacyService_PreservesScopedFallbackWithoutPrefixCollision()
+    {
+        _context!.ServiceAuthorizationPolicies.Add(new ServiceAuthorizationPolicy
+        {
+            PolicyId = Guid.NewGuid().ToString("D"),
+            ServiceId = "legacy-contact",
+            ServiceName = "Legacy Contact",
+            AllowedPathPrefixes = ["contacts/"],
+            AllowedContentTypes = ["*/*"],
+            MaxFileSizeBytes = 1024,
+            StorageQuotaBytes = 4096,
+            AllowOverwrite = true,
+            AllowResumableUpload = true,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync();
+        var service = CreateService(_context);
+
+        var allowed = await service.AuthorizePathLiveAsync(
+            "legacy-subject",
+            "legacy-contact",
+            UploadPermissions.FilesUpload,
+            "contacts/42/model.step");
+        var deniedSibling = await service.AuthorizePathLiveAsync(
+            "legacy-subject",
+            "legacy-contact",
+            UploadPermissions.FilesUpload,
+            "contacts-private/42/model.step");
+
+        Assert.True(allowed);
+        Assert.False(deniedSibling);
+    }
+
+    [Fact]
     public async Task SeedSamplePoliciesAsync_WebAndQuotePoliciesAllowFbxUploads()
     {
         _context!.ServiceAuthorizationPolicies.RemoveRange(_context.ServiceAuthorizationPolicies);

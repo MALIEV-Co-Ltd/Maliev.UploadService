@@ -28,6 +28,7 @@ public class UploadsController : ControllerBase
     private readonly IStorageService _storageService;
     private readonly ILifecycleManagementService _lifecycleService;
     private readonly IAuthorizationPolicyService _authorizationService;
+    private readonly UploadCallerContext _callerContext;
     private readonly UploadDbContext _dbContext;
     private readonly ILogger<UploadsController> _logger;
     private readonly IPublishEndpoint _publishEndpoint;
@@ -40,6 +41,7 @@ public class UploadsController : ControllerBase
         IStorageService storageService,
         ILifecycleManagementService lifecycleService,
         IAuthorizationPolicyService authorizationService,
+        UploadCallerContext callerContext,
         UploadDbContext dbContext,
         ILogger<UploadsController> logger,
         IPublishEndpoint publishEndpoint)
@@ -48,6 +50,7 @@ public class UploadsController : ControllerBase
         _storageService = storageService;
         _lifecycleService = lifecycleService;
         _authorizationService = authorizationService;
+        _callerContext = callerContext;
         _dbContext = dbContext;
         _logger = logger;
         _publishEndpoint = publishEndpoint;
@@ -94,6 +97,12 @@ public class UploadsController : ControllerBase
             return BadRequest(new { error = "ServiceName is required" });
         }
 
+        var caller = _callerContext.GetRequired();
+        if (!TryResolveLogicalServiceName(caller, serviceName, out var logicalServiceName))
+        {
+            return Forbid();
+        }
+
         await using var fileStream = file.OpenReadStream();
         return await StoreCompletedUploadAsync(
             fileStream,
@@ -101,7 +110,7 @@ public class UploadsController : ControllerBase
             string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType,
             file.Length,
             path,
-            serviceName,
+            logicalServiceName,
             overwrite,
             retentionPolicyId,
             metadata,
@@ -144,6 +153,12 @@ public class UploadsController : ControllerBase
             return BadRequest(new { error = "serviceName is required" });
         }
 
+        var caller = _callerContext.GetRequired();
+        if (!TryResolveLogicalServiceName(caller, serviceName, out var logicalServiceName))
+        {
+            return Forbid();
+        }
+
         await using var body = new MemoryStream();
         await Request.Body.CopyToAsync(body, cancellationToken);
         body.Position = 0;
@@ -154,7 +169,7 @@ public class UploadsController : ControllerBase
             string.IsNullOrWhiteSpace(Request.ContentType) ? "application/octet-stream" : Request.ContentType,
             body.Length,
             path,
-            serviceName,
+            logicalServiceName,
             overwrite,
             retentionPolicyId,
             metadata,
@@ -166,7 +181,7 @@ public class UploadsController : ControllerBase
     /// Initiates a direct-to-GCS resumable upload session.
     /// </summary>
     [HttpPost("resumable")]
-    [RequirePermission(UploadPermissions.FilesUpload, ResourcePathTemplate = "folders/{request.Path}")]
+    [RequirePermission(UploadPermissions.FilesUpload)]
     [ProducesResponseType(typeof(InitiateResumableUploadResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -176,22 +191,26 @@ public class UploadsController : ControllerBase
         [FromBody] InitiateResumableUploadRequest request,
         CancellationToken cancellationToken)
     {
+        var caller = _callerContext.GetRequired();
+        if (!TryResolveLogicalServiceName(caller, request.ServiceName, out var serviceName))
+        {
+            return Forbid();
+        }
+
         var uploadId = Guid.NewGuid().ToString();
-        var callerServiceId = GetCallerServiceId();
-        var serviceName = request.ServiceName.Trim();
 
         try
         {
             var sanitizedPath = ResolveUploadPath(request.Path, serviceName, uploadId);
 
-            if (!await _authorizationService.CanUploadToPathAsync(serviceName, sanitizedPath, cancellationToken))
+            if (!await AuthorizePathAsync(caller, UploadPermissions.FilesUpload, sanitizedPath, cancellationToken))
             {
                 _logger.LogWarning(
                     "Unauthorized resumable upload initiation by caller {CallerServiceId} as service {ServiceName} for path {StoragePath}",
-                    callerServiceId,
+                    caller.PrincipalId,
                     serviceName,
                     sanitizedPath);
-                await LogUploadEventAsync(uploadId, callerServiceId, sanitizedPath, "Unauthorized", cancellationToken);
+                await LogUploadEventAsync(uploadId, caller.PrincipalId, sanitizedPath, "Unauthorized", cancellationToken);
                 return Forbid();
             }
 
@@ -223,6 +242,11 @@ public class UploadsController : ControllerBase
                     return Conflict(new { error = $"File already exists at path '{sanitizedPath}'. Set overwrite=true to replace it." });
                 }
 
+                if (!CanMutateOwnedUpload(caller, existingUpload))
+                {
+                    return Forbid();
+                }
+
                 await RemoveExistingUploadAsync(existingUpload, cancellationToken);
             }
 
@@ -236,6 +260,7 @@ public class UploadsController : ControllerBase
             {
                 UploadId = uploadId,
                 ServiceId = serviceName,
+                UserId = caller.PrincipalId,
                 FileName = request.FileName,
                 StoragePath = sanitizedPath,
                 ContentType = request.ContentType,
@@ -293,6 +318,7 @@ public class UploadsController : ControllerBase
         [FromBody] CompleteResumableUploadRequest? request,
         CancellationToken cancellationToken)
     {
+        var caller = _callerContext.GetRequired();
         var upload = await _dbContext.Uploads
             .FirstOrDefaultAsync(u => u.UploadId == uploadId, cancellationToken);
 
@@ -301,9 +327,9 @@ public class UploadsController : ControllerBase
             return NotFound(new { error = "Upload session not found" });
         }
 
-        if (!await CanAccessUploadAsync(upload, cancellationToken))
+        if (!await CanAccessUploadAsync(caller, upload, UploadPermissions.FilesUpload, cancellationToken))
         {
-            await LogUploadEventAsync(uploadId, User.Identity?.Name ?? "unknown", upload.StoragePath, "Unauthorized", cancellationToken);
+            await LogUploadEventAsync(uploadId, caller.PrincipalId, upload.StoragePath, "Unauthorized", cancellationToken);
             return Forbid();
         }
 
@@ -416,15 +442,16 @@ public class UploadsController : ControllerBase
     {
         try
         {
+            var caller = _callerContext.GetRequired();
             var upload = await _dbContext.Uploads.FindAsync([uploadId], cancellationToken);
             if (upload == null)
             {
                 return NotFound(new { error = "Upload session not found" });
             }
 
-            if (!await CanAccessUploadAsync(upload, cancellationToken))
+            if (!await CanAccessUploadAsync(caller, upload, UploadPermissions.FilesUpload, cancellationToken))
             {
-                await LogUploadEventAsync(uploadId, User.Identity?.Name ?? "unknown", upload.StoragePath, "Unauthorized", cancellationToken);
+                await LogUploadEventAsync(uploadId, caller.PrincipalId, upload.StoragePath, "Unauthorized", cancellationToken);
                 return Forbid();
             }
 
@@ -523,7 +550,7 @@ public class UploadsController : ControllerBase
     /// </summary>
     [HttpPost("artifacts")]
     [Consumes("application/json")]
-    [RequirePermission(UploadPermissions.FilesUpload, ResourcePathTemplate = "folders/{request.StoragePath}")]
+    [RequirePermission(UploadPermissions.FilesUpload)]
     [ProducesResponseType(typeof(ArtifactUploadResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -532,7 +559,8 @@ public class UploadsController : ControllerBase
         [FromBody] UploadArtifactRequest request,
         CancellationToken cancellationToken)
     {
-        var serviceName = GetCallerServiceId();
+        var caller = _callerContext.GetRequired();
+        var serviceName = caller.TrustedServiceName ?? caller.PrincipalId;
 
         try
         {
@@ -560,7 +588,7 @@ public class UploadsController : ControllerBase
                 return BadRequest(new { error = $"Invalid path: {ex.Message}" });
             }
 
-            if (!await _authorizationService.CanUploadToPathAsync(serviceName, sanitizedPath, cancellationToken))
+            if (!await AuthorizePathAsync(caller, UploadPermissions.FilesUpload, sanitizedPath, cancellationToken))
             {
                 _logger.LogWarning(
                     "Unauthorized artifact upload by service {ServiceName} for path {StoragePath}",
@@ -618,13 +646,14 @@ public class UploadsController : ControllerBase
         CancellationToken cancellationToken)
     {
         var uploadId = Guid.NewGuid().ToString();
+        var caller = _callerContext.GetRequired();
         var normalizedServiceName = serviceName.Trim();
 
         try
         {
             var sanitizedPath = ResolveUploadPath(path, normalizedServiceName, uploadId);
 
-            if (!await _authorizationService.CanUploadToPathAsync(normalizedServiceName, sanitizedPath, cancellationToken))
+            if (!await AuthorizePathAsync(caller, UploadPermissions.FilesUpload, sanitizedPath, cancellationToken))
             {
                 _logger.LogWarning(
                     "Unauthorized upload by service {ServiceName} for path {StoragePath}",
@@ -662,6 +691,11 @@ public class UploadsController : ControllerBase
                     return Conflict(new { error = $"File already exists at path '{sanitizedPath}'. Set overwrite=true to replace it." });
                 }
 
+                if (!CanMutateOwnedUpload(caller, existingUpload))
+                {
+                    return Forbid();
+                }
+
                 await RemoveExistingUploadAsync(existingUpload, cancellationToken);
             }
 
@@ -685,6 +719,7 @@ public class UploadsController : ControllerBase
             {
                 UploadId = uploadId,
                 ServiceId = normalizedServiceName,
+                UserId = caller.PrincipalId,
                 FileName = fileName,
                 StoragePath = sanitizedPath,
                 ContentType = uploadResult.ContentType,
@@ -854,20 +889,51 @@ public class UploadsController : ControllerBase
         ), cancellationToken);
     }
 
-    private async Task<bool> CanAccessUploadAsync(Upload upload, CancellationToken cancellationToken)
+    private async Task<bool> CanAccessUploadAsync(
+        UploadCaller caller,
+        Upload upload,
+        string permissionId,
+        CancellationToken cancellationToken)
     {
-        var serviceId = GetCallerServiceId();
-        return await _authorizationService.CanAccessPathAsync(
-            serviceId,
-            upload.StoragePath,
+        return CanMutateOwnedUpload(caller, upload)
+            && await AuthorizePathAsync(caller, permissionId, upload.StoragePath, cancellationToken);
+    }
+
+    private Task<bool> AuthorizePathAsync(
+        UploadCaller caller,
+        string permissionId,
+        string sanitizedPath,
+        CancellationToken cancellationToken)
+    {
+        return _authorizationService.AuthorizePathLiveAsync(
+            caller.PrincipalId,
+            caller.LegacyPolicyServiceId,
+            permissionId,
+            sanitizedPath,
             cancellationToken);
     }
 
-    private string GetCallerServiceId()
+    private static bool CanMutateOwnedUpload(UploadCaller caller, Upload upload) =>
+        !caller.IsManagedService
+        || upload.UserId is null
+        || string.Equals(upload.UserId, caller.PrincipalId, StringComparison.Ordinal);
+
+    private static bool TryResolveLogicalServiceName(
+        UploadCaller caller,
+        string requestedServiceName,
+        out string logicalServiceName)
     {
-        return User.FindFirst("service_name")?.Value
-            ?? User.Identity?.Name
-            ?? "unknown";
+        logicalServiceName = requestedServiceName.Trim();
+        if (!caller.IsService)
+        {
+            return true;
+        }
+
+        return caller.TrustedServiceName is not null
+            && string.Equals(
+                caller.TrustedServiceName,
+                logicalServiceName,
+                StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task LogUploadEventAsync(

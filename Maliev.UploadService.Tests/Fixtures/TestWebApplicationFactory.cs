@@ -149,6 +149,12 @@ public class TestWebApplicationFactory : BaseIntegrationTestFactory<Program, Upl
                 It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+        mockIamClient.Setup(m => m.CheckPermissionLiveAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         services.AddScoped(_ => mockIamClient.Object);
     }

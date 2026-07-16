@@ -134,6 +134,53 @@ public class AuthorizationPolicyService : IAuthorizationPolicyService
         return authorized;
     }
 
+    /// <inheritdoc />
+    public async Task<bool> AuthorizePathLiveAsync(
+        string principalId,
+        string? legacyPolicyServiceId,
+        string permissionId,
+        string sanitizedPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(principalId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(permissionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sanitizedPath);
+
+        var resourcePath = $"folders/{sanitizedPath.TrimStart('/')}";
+        if (await _iamClient.CheckPermissionLiveAsync(
+                principalId,
+                permissionId,
+                resourcePath,
+                cancellationToken))
+        {
+            _metrics.RecordAuthSuccess(permissionId, resourcePath);
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(legacyPolicyServiceId))
+        {
+            _metrics.RecordAuthFailure(permissionId, resourcePath, "LiveIamDenial");
+            return false;
+        }
+
+        var policy = await GetPolicyAsync(legacyPolicyServiceId, cancellationToken);
+        var allowed = policy is not null && policy.AllowedPathPrefixes.Any(
+            prefix => IsPathWithinPrefix(sanitizedPath, prefix));
+        if (!allowed)
+        {
+            _metrics.RecordAuthFailure(permissionId, resourcePath, "LegacyDenial");
+        }
+
+        return allowed;
+    }
+
+    private static bool IsPathWithinPrefix(string path, string prefix)
+    {
+        var normalizedPrefix = prefix.Trim('/');
+        return path.Equals(normalizedPrefix, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith($"{normalizedPrefix}/", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Checks if a service can access (read/delete) a file at a specific path.
     /// </summary>

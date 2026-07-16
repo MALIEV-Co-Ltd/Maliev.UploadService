@@ -59,6 +59,12 @@ public class IAMResourceScopedTests : IAsyncLifetime
             resourcePath,
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+                It.IsAny<string>(),
+                UploadPermissions.FilesUpload,
+                resourcePath,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
 
         var request = new
         {
@@ -94,6 +100,12 @@ public class IAMResourceScopedTests : IAsyncLifetime
             UploadPermissions.FilesUpload,
             resourcePath,
             It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+                It.IsAny<string>(),
+                UploadPermissions.FilesUpload,
+                resourcePath,
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         var request = new

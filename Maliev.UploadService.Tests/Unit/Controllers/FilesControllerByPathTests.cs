@@ -38,7 +38,12 @@ public class FilesControllerByPathTests
 
         var authMock = new Mock<IAuthorizationPolicyService>();
         authMock
-            .Setup(a => a.CanAccessPathAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(a => a.AuthorizePathLiveAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(canAccess);
 
         var cacheOptions = Options.Create(new MemoryDistributedCacheOptions());
@@ -61,22 +66,21 @@ public class FilesControllerByPathTests
         var dbContext = new UploadDbContext(dbOptions);
 
         var publishMock = new Mock<IPublishEndpoint>();
+        var httpContext = CreateHttpContext();
 
         var controller = new FilesController(
             storageMock.Object,
             authMock.Object,
+            new UploadCallerContext(new HttpContextAccessor { HttpContext = httpContext }),
             dbContext,
             cache,
             NullLogger<FilesController>.Instance,
             publishMock.Object);
 
         // Set up a fake user so [RequirePermission] can read the identity name
-        var user = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, "test-service")],
-            "Bearer"));
         controller.ControllerContext = new ControllerContext
         {
-            HttpContext = new DefaultHttpContext { User = user }
+            HttpContext = httpContext
         };
 
         return controller;
@@ -127,7 +131,12 @@ public class FilesControllerByPathTests
             .ReturnsAsync(false); // would return 410 if called
 
         var authMock = new Mock<IAuthorizationPolicyService>();
-        authMock.Setup(a => a.CanAccessPathAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        authMock.Setup(a => a.AuthorizePathLiveAsync(
+                It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         var cacheOptions = Options.Create(new MemoryDistributedCacheOptions());
@@ -140,9 +149,11 @@ public class FilesControllerByPathTests
             .UseNpgsql("Host=fake;Database=fake")
             .Options;
 
+        var httpContext = CreateHttpContext();
         var controller = new FilesController(
             storageMock.Object,
             authMock.Object,
+            new UploadCallerContext(new HttpContextAccessor { HttpContext = httpContext }),
             new UploadDbContext(dbOptions),
             cache,
             NullLogger<FilesController>.Instance,
@@ -150,11 +161,7 @@ public class FilesControllerByPathTests
 
         controller.ControllerContext = new ControllerContext
         {
-            HttpContext = new DefaultHttpContext
-            {
-                User = new ClaimsPrincipal(new ClaimsIdentity(
-                    [new Claim(ClaimTypes.Name, "test-service")], "Bearer"))
-            }
+            HttpContext = httpContext
         };
 
         var request = new GenerateSignedUrlByPathRequest { StoragePath = "some/path.stl", ExpirationMinutes = 60 };
@@ -163,11 +170,27 @@ public class FilesControllerByPathTests
         var okResult = Assert.IsType<OkObjectResult>(result);
         Assert.Equal(200, okResult.StatusCode);
         authMock.Verify(
-            a => a.CanAccessPathAsync("test-service", "some/path.stl", It.IsAny<CancellationToken>()),
+            a => a.AuthorizePathLiveAsync(
+                "test-service",
+                null,
+                UploadPermissions.FilesDownload,
+                "some/path.stl",
+                It.IsAny<CancellationToken>()),
             Times.Once);
         // Should NOT have called FileExistsAsync because cache hit happens after authorization
         storageMock.Verify(
             s => s.FileExistsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    private static DefaultHttpContext CreateHttpContext()
+    {
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.NameIdentifier, "test-service")],
+                "Bearer"))
+        };
+        return context;
     }
 }

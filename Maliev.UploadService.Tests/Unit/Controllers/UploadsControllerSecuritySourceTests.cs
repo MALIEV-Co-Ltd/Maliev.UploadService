@@ -13,8 +13,8 @@ public sealed class UploadsControllerSecuritySourceTests
     {
         var source = ReadRepoFile("Maliev.UploadService.Api", "Controllers", "v1", "UploadsController.cs");
 
-        AssertCallPrecedes(source, "InitiateResumableUpload", "CanUploadToPathAsync(serviceName, sanitizedPath", "InitiateResumableUploadAsync(");
-        AssertCallPrecedes(source, "UploadArtifact", "CanUploadToPathAsync(serviceName, sanitizedPath", "UploadFileAsync(");
+        AssertCallPrecedes(source, "InitiateResumableUpload", "AuthorizePathAsync(caller, UploadPermissions.FilesUpload, sanitizedPath", "InitiateResumableUploadAsync(");
+        AssertCallPrecedes(source, "UploadArtifact", "AuthorizePathAsync(caller, UploadPermissions.FilesUpload, sanitizedPath", "UploadFileAsync(");
     }
 
     private static void AssertCallPrecedes(string source, string actionName, string guardCall, string sinkCall)

@@ -57,7 +57,10 @@ public class SecurityTests : IAsyncLifetime
 
         // Allow all IAM checks by default for security tests (focus on other vulns)
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         // Authenticated client for test-service

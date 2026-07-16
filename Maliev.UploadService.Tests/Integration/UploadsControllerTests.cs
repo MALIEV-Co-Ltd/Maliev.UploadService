@@ -44,7 +44,10 @@ public class UploadsControllerTests : IAsyncLifetime
 
         // Allow all IAM checks for general upload tests
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
-            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         _authToken = GenerateJwtToken("test-service", "uploadservice");
@@ -571,6 +574,9 @@ public class UploadsControllerTests : IAsyncLifetime
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "test-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+            "test-service", It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
 
         // Act
         var response = await unauthorizedClient.PostAsync("/upload/v1/uploads", content);
@@ -600,6 +606,9 @@ public class UploadsControllerTests : IAsyncLifetime
         // Explicitly deny in IAM for this test
         _iamClientMock.Setup(x => x.CheckPermissionAsync(
             "test-service", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _iamClientMock.Setup(x => x.CheckPermissionLiveAsync(
+            "test-service", It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
         // Act
