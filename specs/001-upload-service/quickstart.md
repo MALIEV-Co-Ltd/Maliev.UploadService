@@ -166,7 +166,7 @@ Save this token for API requests.
 **Using curl**:
 
 ```bash
-export TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+export TOKEN="<paste-token-from-previous-step>"
 
 curl -X POST http://localhost:8080/api/v1/uploads \
   -H "Authorization: Bearer $TOKEN" \
@@ -541,4 +541,3 @@ For questions or issues:
 - **Slack**: #maliev-upload-service
 - **Email**: platform-eng@maliev.com
 - **Documentation**: `specs/001-upload-service/`
-
