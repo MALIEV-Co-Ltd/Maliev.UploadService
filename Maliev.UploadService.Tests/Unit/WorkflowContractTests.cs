@@ -59,6 +59,27 @@ public sealed class WorkflowContractTests
         }
     }
 
+    /// <summary>
+    /// Direct Microsoft.Extensions dependencies must not undercut the exact shared defaults graph.
+    /// </summary>
+    [Fact]
+    public void ApplicationPackageFloors_MatchSharedDefaults()
+    {
+        var project = File.ReadAllText(Path.Combine(
+            Root,
+            "Maliev.UploadService.Application",
+            "Maliev.UploadService.Application.csproj"));
+
+        Assert.Contains(
+            "<PackageReference Include=\"Microsoft.Extensions.Configuration.Abstractions\" Version=\"10.0.10\" />",
+            project,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<PackageReference Include=\"Microsoft.Extensions.Logging.Abstractions\" Version=\"10.0.10\" />",
+            project,
+            StringComparison.Ordinal);
+    }
+
     private static void AssertSafe(string source)
     {
         foreach (var forbidden in new[]
