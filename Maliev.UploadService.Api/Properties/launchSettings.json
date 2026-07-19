@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "upload/scalar",
+      "applicationUrl": "http://localhost:6900",
+      "environmentVariables": {}
+    },
+    "https": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "upload/scalar",
+      "applicationUrl": "https://localhost:8900;http://localhost:6900",
+      "environmentVariables": {}
+    }
+  }
+}

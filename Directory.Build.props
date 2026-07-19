@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <SharedLibraryVersion Condition="'$(SharedLibraryVersion)' == ''">1.0.*-alpha*</SharedLibraryVersion>
+  </PropertyGroup>
+</Project>
